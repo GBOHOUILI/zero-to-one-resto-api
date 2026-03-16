@@ -4,6 +4,6 @@ import { MenusService } from './menus.service';
 
 @Module({
   controllers: [MenusController],
-  providers: [MenusService]
+  providers: [MenusService],
 })
 export class MenusModule {}
