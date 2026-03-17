@@ -13,24 +13,27 @@ import { GetUser } from '../common/get-user.decorator';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { Role } from './role.enum';
+
 @Controller('auth')
-@ApiTags('Authentication') // Pour grouper dans Swagger
+@ApiTags('Authentication')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
   @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
+  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN) // Endpoint protégé
   @ApiOperation({ summary: 'Créer un nouvel utilisateur (Admin Resto)' })
   async register(
     @Body() registerDto: RegisterDto,
-    @GetUser('id') currentUserId: string,
+    @GetUser('role') currentUserRole: Role,
   ) {
     const { email, password, role, restaurantId } = registerDto;
 
-    if (role === 'super_admin') {
+    // Bloque la création d'un super admin si l'utilisateur n'est pas SUPER_ADMIN
+    if (role === Role.SUPER_ADMIN && currentUserRole !== Role.SUPER_ADMIN) {
       throw new ForbiddenException(
-        'Seul un super admin peut créer un autre super admin',
+        'Seul un SUPER_ADMIN peut créer un autre SUPER_ADMIN',
       );
     }
 

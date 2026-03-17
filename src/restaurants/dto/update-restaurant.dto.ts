@@ -1,5 +1,25 @@
-// src/restaurants/dto/update-restaurant.dto.ts
-import { IsOptional, IsString, IsArray } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsArray,
+  ValidateNested,
+  IsBoolean,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+class DomainDto {
+  @IsString()
+  @IsOptional()
+  hostname?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isPrimary?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  verified?: boolean;
+}
 
 export class UpdateRestaurantDto {
   @IsString()
@@ -27,8 +47,13 @@ export class UpdateRestaurantDto {
   currency?: string;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DomainDto)
+  @IsOptional()
+  customDomains?: DomainDto[];
+
+  @IsArray()
   @IsString({ each: true })
   @IsOptional()
   seoKeywords?: string[];
-  // Ajoute d'autres champs si besoin (status, slogan, etc.)
 }

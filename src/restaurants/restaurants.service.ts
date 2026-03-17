@@ -20,49 +20,48 @@ export class RestaurantsService {
     private mailService: MailService,
   ) {}
 
-  // Liste TOUS les restaurants (pour SUPER_ADMIN)
+  // ────────────────────────────────────────────────
+  // Liste tous les restaurants (SUPER_ADMIN)
+  // ────────────────────────────────────────────────
   async getAll(): Promise<Restaurant[]> {
     return this.prisma.restaurant.findMany({
       orderBy: { created_at: 'desc' },
     });
   }
 
-  // Récupère le restaurant du proprio (pour RESTO_ADMIN)
+  // ────────────────────────────────────────────────
+  // Récupère le restaurant du proprio (RESTO_ADMIN)
+  // ────────────────────────────────────────────────
   async getByOwner(userId: string): Promise<Restaurant[]> {
     const profile = await this.prisma.profile.findUnique({
       where: { user_id: userId },
       select: { restaurantId: true },
     });
 
-    if (!profile?.restaurantId) {
-      return [];
-    }
+    if (!profile?.restaurantId) return [];
 
     return this.prisma.restaurant.findMany({
       where: { id: profile.restaurantId },
     });
   }
 
-  // Récupère un restaurant par ID + vérif ownership
-  async getById(
-    id: string,
-    role: string,
-    userId: string,
-  ): Promise<Restaurant | null> {
+  // ────────────────────────────────────────────────
+  // Récupère un restaurant par ID + vérif rôle/ownership
+  // ────────────────────────────────────────────────
+  async getById(id: string, role: string, userId: string): Promise<Restaurant> {
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id },
     });
 
-    if (!restaurant) {
-      throw new NotFoundException('Restaurant non trouvé');
-    }
+    if (!restaurant) throw new NotFoundException('Restaurant non trouvé');
 
-    if (role === 'resto_admin') {
+    role = role.toUpperCase();
+
+    if (role === 'RESTO_ADMIN') {
       const profile = await this.prisma.profile.findUnique({
         where: { user_id: userId },
         select: { restaurantId: true },
       });
-
       if (profile?.restaurantId !== id) {
         throw new ForbiddenException(
           'Vous n’êtes pas propriétaire de ce restaurant',
@@ -73,6 +72,9 @@ export class RestaurantsService {
     return restaurant;
   }
 
+  // ────────────────────────────────────────────────
+  // Création d’un restaurant (SUPER_ADMIN uniquement)
+  // ────────────────────────────────────────────────
   async createRestaurant(
     superAdminId: string,
     dto: CreateRestaurantDto,
@@ -81,7 +83,7 @@ export class RestaurantsService {
       where: { id: superAdminId },
     });
 
-    if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
+    if (!superAdmin || superAdmin.role.toUpperCase() !== 'SUPER_ADMIN') {
       throw new UnauthorizedException(
         'Seul un super admin peut créer un restaurant',
       );
@@ -91,23 +93,23 @@ export class RestaurantsService {
       where: { email: dto.adminEmail },
     });
 
-    if (existing) {
-      throw new BadRequestException('Cet email est déjà utilisé');
-    }
+    if (existing) throw new BadRequestException('Cet email est déjà utilisé');
 
     const password = this.generateRandomPassword(12);
     const hashed = await bcrypt.hash(password, 10);
 
     return this.prisma
       .$transaction(async (tx) => {
+        // Création du RESTO_ADMIN
         const restoAdmin = await tx.user.create({
           data: {
             email: dto.adminEmail,
             password: hashed,
-            role: 'resto_admin',
+            role: 'RESTO_ADMIN',
           },
         });
 
+        // Création du restaurant
         const restaurant = await tx.restaurant.create({
           data: {
             name: dto.name,
@@ -119,9 +121,19 @@ export class RestaurantsService {
             currency: dto.currency ?? 'XOF',
             status: 'incomplete',
             seo_keywords: dto.seoKeywords ?? [],
+            custom_domains: dto.customDomains
+              ? {
+                  create: dto.customDomains.map((d) => ({
+                    hostname: d.hostname.toLowerCase(),
+                    isPrimary: d.isPrimary ?? false,
+                    verified: d.verified ?? false,
+                  })),
+                }
+              : undefined,
           },
         });
 
+        // Mise à jour/creation du profile
         await tx.profile.upsert({
           where: { user_id: restoAdmin.id },
           update: { restaurantId: restaurant.id },
@@ -144,13 +156,14 @@ export class RestaurantsService {
           );
         } catch (err) {
           console.error('Échec envoi email', err);
-          // Ne bloque pas la réponse : on log seulement
         }
-
         return restaurant;
       });
   }
 
+  // ────────────────────────────────────────────────
+  // Mise à jour restaurant
+  // ────────────────────────────────────────────────
   async update(
     id: string,
     dto: UpdateRestaurantDto,
@@ -161,16 +174,15 @@ export class RestaurantsService {
       where: { id },
     });
 
-    if (!restaurant) {
-      throw new NotFoundException('Restaurant non trouvé');
-    }
+    if (!restaurant) throw new NotFoundException('Restaurant non trouvé');
 
-    if (role === 'resto_admin') {
+    role = role.toUpperCase();
+
+    if (role === 'RESTO_ADMIN') {
       const profile = await this.prisma.profile.findUnique({
         where: { user_id: userId },
         select: { restaurantId: true },
       });
-
       if (profile?.restaurantId !== id) {
         throw new ForbiddenException('Non autorisé');
       }
@@ -182,10 +194,16 @@ export class RestaurantsService {
     });
   }
 
+  // ────────────────────────────────────────────────
+  // Suppression restaurant
+  // ────────────────────────────────────────────────
   async delete(id: string): Promise<Restaurant> {
     return this.prisma.restaurant.delete({ where: { id } });
   }
 
+  // ────────────────────────────────────────────────
+  // Génération mot de passe aléatoire
+  // ────────────────────────────────────────────────
   private generateRandomPassword(length: number): string {
     const chars =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';

@@ -1,7 +1,9 @@
+// src/auth/auth.service.ts
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
+import { Role } from './role.enum'; // ← import de l'enum
 
 @Injectable()
 export class AuthService {
@@ -10,10 +12,11 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
+  // Utilise Role comme type pour le rôle
   async register(
     email: string,
     password: string,
-    role: 'super_admin' | 'resto_admin',
+    role: Role,
     restaurantId?: string,
   ) {
     const existingUser = await this.prisma.user.findUnique({
@@ -26,7 +29,7 @@ export class AuthService {
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await this.prisma.user.create({
-      data: { email, password: hashed, role },
+      data: { email, password: hashed, role }, // Role enum utilisé ici
       include: { profile: true },
     });
 
@@ -53,24 +56,21 @@ export class AuthService {
     });
 
     if (!user) {
-      // Aucun utilisateur trouvé avec cet email
       throw new UnauthorizedException({ message: 'Utilisateur non trouvé' });
     }
 
     if (!user.password) {
-      // Cas rare : utilisateur sans mot de passe
       throw new UnauthorizedException({ message: 'Le compte est invalide' });
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      // Mot de passe incorrect
       throw new UnauthorizedException({ message: 'Mot de passe incorrect' });
     }
 
     const payload = {
       sub: user.id,
-      role: user.role,
+      role: user.role as Role, // assure TypeScript que c’est un Role
       restaurantId: user.profile?.restaurantId ?? null,
     };
 
@@ -80,7 +80,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        role: user.role,
+        role: user.role as Role,
         restaurantId: user.profile?.restaurantId ?? null,
       },
     };

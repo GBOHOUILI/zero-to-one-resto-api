@@ -1,3 +1,4 @@
+// src/auth/dto/register.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEmail,
@@ -6,6 +7,7 @@ import {
   IsOptional,
   MinLength,
 } from 'class-validator';
+import { Role } from '../role.enum';
 
 export class RegisterDto {
   @ApiProperty({ example: 'eldomoreo@gmail.com' })
@@ -17,9 +19,9 @@ export class RegisterDto {
   @MinLength(6)
   password: string;
 
-  @ApiProperty({ enum: ['super_admin', 'resto_admin'], example: 'resto_admin' })
-  @IsEnum(['super_admin', 'resto_admin'])
-  role: 'super_admin' | 'resto_admin';
+  @ApiProperty({ enum: Role, example: Role.RESTO_ADMIN })
+  @IsEnum(Role)
+  role: Role; // ← Utilisation de l'enum Role en majuscules
 
   @ApiProperty({ required: false })
   @IsOptional()

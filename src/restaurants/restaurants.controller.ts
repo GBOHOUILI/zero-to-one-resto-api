@@ -11,55 +11,52 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { RestaurantsService } from './restaurants.service';
 import { Restaurant } from '@prisma/client';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard'; // suppose que tu as ce guard
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { GetUser } from '../common/get-user.decorator';
-import { CreateRestaurantDto } from './dto/create-restaurant.dto'; // à créer
-import { UpdateRestaurantDto } from './dto/update-restaurant.dto'; // à créer
+import { CreateRestaurantDto } from './dto/create-restaurant.dto';
+import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { Role } from '../auth/role.enum';
 
+@ApiTags('Restaurants')
+@ApiBearerAuth('access-token')
 @Controller('restaurants')
-@UseGuards(JwtAuthGuard) // toutes les routes nécessitent un JWT valide
+@UseGuards(JwtAuthGuard, RolesGuard) // Toutes les routes nécessitent JWT + rôles
 export class RestaurantsController {
   constructor(private readonly restaurantsService: RestaurantsService) {}
 
-  // ────────────────────────────────────────────────
-  // Liste tous les restaurants (SUPER_ADMIN voit tout, RESTO_ADMIN voit le sien)
-  // ────────────────────────────────────────────────
   @Get()
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN') // les deux rôles peuvent lister
-  async getAll(@GetUser('role') role: string, @GetUser('id') userId: string) {
-    if (role === 'SUPER_ADMIN') {
-      return this.restaurantsService.getAll(); // voit tous
+  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
+  @ApiOperation({
+    summary:
+      'Liste tous les restaurants (SUPER_ADMIN voit tout, RESTO_ADMIN voit le sien)',
+  })
+  async getAll(@GetUser('role') role: Role, @GetUser('id') userId: string) {
+    if (role === Role.SUPER_ADMIN) {
+      return this.restaurantsService.getAll();
     }
-    // resto_admin ne voit que son restaurant
     return this.restaurantsService.getByOwner(userId);
   }
 
-  // ────────────────────────────────────────────────
-  // Récupère un restaurant par ID
-  // ────────────────────────────────────────────────
   @Get(':id')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN', 'resto_admin')
+  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
+  @ApiOperation({ summary: 'Récupère un restaurant par ID' })
   async getById(
     @Param('id') id: string,
-    @GetUser('role') role: string,
+    @GetUser('role') role: Role,
     @GetUser('id') userId: string,
   ): Promise<Restaurant | null> {
     return this.restaurantsService.getById(id, role, userId);
   }
 
-  // ────────────────────────────────────────────────
-  // Création → UNIQUEMENT SUPER_ADMIN
-  // ────────────────────────────────────────────────
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
+  @Roles(Role.SUPER_ADMIN)
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Créer un restaurant (SUPER_ADMIN uniquement)' })
   async create(
     @GetUser('id') superAdminId: string,
     @Body() dto: CreateRestaurantDto,
@@ -67,28 +64,25 @@ export class RestaurantsController {
     return this.restaurantsService.createRestaurant(superAdminId, dto);
   }
 
-  // ────────────────────────────────────────────────
-  // Mise à jour → SUPER_ADMIN ou proprio RESTO_ADMIN
-  // ────────────────────────────────────────────────
   @Put(':id')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN', 'resto_admin')
+  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
+  @ApiOperation({
+    summary:
+      'Mettre à jour un restaurant (SUPER_ADMIN ou propriétaire RESTO_ADMIN)',
+  })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateRestaurantDto,
-    @GetUser('role') role: string,
+    @GetUser('role') role: Role,
     @GetUser('id') userId: string,
   ): Promise<Restaurant> {
     return this.restaurantsService.update(id, dto, role, userId);
   }
 
-  // ────────────────────────────────────────────────
-  // Suppression → UNIQUEMENT SUPER_ADMIN
-  // ────────────────────────────────────────────────
   @Delete(':id')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
+  @Roles(Role.SUPER_ADMIN)
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Supprimer un restaurant (SUPER_ADMIN uniquement)' })
   async delete(@Param('id') id: string): Promise<Restaurant> {
     return this.restaurantsService.delete(id);
   }

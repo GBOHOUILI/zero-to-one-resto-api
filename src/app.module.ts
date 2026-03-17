@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { RestaurantsModule } from './restaurants/restaurants.module';
 import { MenusModule } from './menus/menus.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { RedisModule } from './common/redis/redis.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    RedisModule,
     SharedModule,
     AuthModule,
     RestaurantsModule,

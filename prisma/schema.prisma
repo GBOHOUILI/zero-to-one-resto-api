@@ -7,281 +7,267 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 👤 Auth
+enum Role {
+  SUPER_ADMIN
+  RESTO_ADMIN
+}
+
 model User {
-  id          String   @id @default(uuid())
-  email       String   @unique
+  id          String       @id @default(uuid())
+  email       String       @unique
   password    String
-  created_at  DateTime @default(now())
-  role        String
+  created_at  DateTime     @default(now())
+  role        Role
   profile     Profile?
   restaurants Restaurant[] @relation("OwnerRestaurants")
 }
 
 model Profile {
-  id         String   @id
-  user_id    String   @unique
-  created_at DateTime @default(now())
+  id           String   @id
+  user_id      String   @unique
+  created_at   DateTime @default(now())
   restaurantId String?
-  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
-// 🏪 Restaurants
 model Restaurant {
-  id                String          @id @default(uuid())
-  slug              String          @unique
-  name              String
-  slogan            String?
-  logo_url          String?
-  type              String
-  template          String
-  primary_color     String
-  secondary_color   String?
-  font_family       String?
-  show_images       Boolean         @default(true)
-  dark_mode         Boolean         @default(false)
-  currency          String
-  seo_keywords      String[]
-  newsletter_enabled Boolean        @default(false)
-  status            String
-  owner_id          String
-  created_at        DateTime        @default(now())
-  updated_at        DateTime        @updatedAt
-
-  owner             User            @relation("OwnerRestaurants", fields: [owner_id], references: [id])
-
-  contacts          Contact?
-  social_links      SocialLink?
-  business_info     BusinessInfo?
-  opening_hours     OpeningHour[]
-  menu_categories   MenuCategory[]
-  menu_items        MenuItem[]
-  gallery           Gallery[]
-  testimonials      Testimonial[]
-  promotions        Promotion[]
-  page_configs      PageConfig[]
-  subscriptions     Subscription?
-  payments          Payment[]
-  analytics_events  AnalyticsEvent[]
-  custom_domains    CustomDomain[]
-  faqs              Faq[]
+  id                 String           @id @default(uuid())
+  slug               String           @unique
+  name               String
+  slogan             String?
+  logo_url           String?
+  type               String
+  template           String
+  primary_color      String
+  secondary_color    String?
+  font_family        String?
+  show_images        Boolean          @default(true)
+  dark_mode          Boolean          @default(false)
+  currency           String
+  seo_keywords       String[]
+  newsletter_enabled Boolean          @default(false)
+  status             String
+  owner_id           String
+  created_at         DateTime         @default(now())
+  updated_at         DateTime         @updatedAt
+  primaryDomainId    String?          @unique
+  analytics_events   AnalyticsEvent[]
+  business_info      BusinessInfo?
+  contacts           Contact?
+  custom_domains     CustomDomain[]
+  faqs               Faq[]
+  gallery            Gallery[]
+  menu_categories    MenuCategory[]
+  menu_items         MenuItem[]
+  opening_hours      OpeningHour[]
+  page_configs       PageConfig[]
+  payments           Payment[]
+  promotions         Promotion[]
+  owner              User             @relation("OwnerRestaurants", fields: [owner_id], references: [id])
+  primaryDomain      CustomDomain?    @relation("PrimaryDomain", fields: [primaryDomainId], references: [id])
+  social_links       SocialLink?
+  subscriptions      Subscription?
+  testimonials       Testimonial[]
 }
 
-// Contacts / SocialLinks / BusinessInfo
 model Contact {
-  restaurant_id   String @id
+  restaurant_id   String     @id
   whatsapp        String
   phone           String?
   email           String?
   address         String?
   google_maps_url String?
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  restaurant      Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
 model SocialLink {
-  restaurant_id String @id
+  restaurant_id String     @id
   facebook      String?
   instagram     String?
   tiktok        String?
   twitter       String?
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
 model BusinessInfo {
-  restaurant_id   String @id
+  restaurant_id   String     @id
   delivery_fee    Float?
   services        String[]
   capacity        Int?
   payment_methods String[]
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  restaurant      Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
-// Opening Hours
 model OpeningHour {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   restaurant_id String
   day_of_week   Int
   open_time     String
   close_time    String
-  is_closed     Boolean @default(false)
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  is_closed     Boolean    @default(false)
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
-// Pages / Heroes
 model PageConfig {
-  id               String   @id @default(uuid())
-  restaurant_id    String
-  page_slug        String
-  hero_media_type  String
-  hero_media_url   String
-  hero_poster_url  String?
-  hero_autoplay    Boolean @default(true)
-  hero_muted       Boolean @default(true)
-  hero_loop        Boolean @default(true)
-  page_title       String?
-  page_subtitle    String?
-  page_text        String?
-  page_images      String[]
-  page_videos      String[]
-  updated_at       DateTime @updatedAt
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  id              String     @id @default(uuid())
+  restaurant_id   String
+  page_slug       String
+  hero_media_type String
+  hero_media_url  String
+  hero_poster_url String?
+  hero_autoplay   Boolean    @default(true)
+  hero_muted      Boolean    @default(true)
+  hero_loop       Boolean    @default(true)
+  page_title      String?
+  page_subtitle   String?
+  page_text       String?
+  page_images     String[]
+  page_videos     String[]
+  updated_at      DateTime   @updatedAt
+  restaurant      Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 
   @@unique([restaurant_id, page_slug])
 }
 
-// Menu / Content
 model MenuCategory {
-  id            String @id @default(uuid())
+  id            String     @id @default(uuid())
   restaurant_id String
   name          String
-  position      Int @default(0)
+  position      Int        @default(0)
   icon          String?
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
-  menu_items MenuItem[]
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  menu_items    MenuItem[]
 }
 
 model MenuItem {
-  id               String   @id @default(uuid())
-  category_id      String
-  restaurant_id    String
-  name             String
+  id                String       @id @default(uuid())
+  category_id       String
+  restaurant_id     String
+  name              String
   short_description String?
   full_description  String?
-  price            Float
-  image_url        String?
-  available        Boolean @default(true)
-  category_type    String
-  ingredients      String[]
-  allergens        String[]
-  accompaniments   String[]
-  preparation_time String?
-  calories         Int?
-  nutritional_info Json?
-  variants         Json?
-  position         Int @default(0)
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
-
-  restaurant  Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
-  category    MenuCategory @relation(fields: [category_id], references: [id], onDelete: Cascade)
+  price             Float
+  image_url         String?
+  available         Boolean      @default(true)
+  category_type     String
+  ingredients       String[]
+  allergens         String[]
+  accompaniments    String[]
+  preparation_time  String?
+  calories          Int?
+  nutritional_info  Json?
+  variants          Json?
+  position          Int          @default(0)
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+  category          MenuCategory @relation(fields: [category_id], references: [id], onDelete: Cascade)
+  restaurant        Restaurant   @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
-// Gallery / Testimonials / Promotions
 model Gallery {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   restaurant_id String
   image_url     String
   alt_text      String?
-  position      Int @default(0)
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  position      Int        @default(0)
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
 model Testimonial {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   restaurant_id String
   author        String
   text          String
   rating        Int
-  visible       Boolean @default(true)
-  created_at    DateTime @default(now())
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  visible       Boolean    @default(true)
+  created_at    DateTime   @default(now())
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
 model Promotion {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   restaurant_id String
   title         String
   description   String?
-  active        Boolean @default(true)
-  created_at    DateTime @default(now())
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  active        Boolean    @default(true)
+  created_at    DateTime   @default(now())
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
-// Plans / Subscriptions / Payments
 model Plan {
-  id            String @id @default(uuid())
-  name          String
-  price         Float
+  id             String         @id @default(uuid())
+  name           String
+  price          Float
   billing_period String
-  custom_domain Boolean
+  custom_domain  Boolean
   max_menu_items Int
   analytics      Boolean
   features       Json
-  active         Boolean @default(true)
-
-  subscriptions Subscription[]
+  active         Boolean        @default(true)
+  subscriptions  Subscription[]
 }
 
 model Subscription {
-  id             String   @id @default(uuid())
-  restaurant_id  String @unique
-  plan_id        String
-  start_date     DateTime
-  end_date       DateTime
-  status         String
-  created_at     DateTime @default(now())
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
-  plan       Plan       @relation(fields: [plan_id], references: [id])
-  payments   Payment[]
+  id            String     @id @default(uuid())
+  restaurant_id String     @unique
+  plan_id       String
+  start_date    DateTime
+  end_date      DateTime
+  status        String
+  created_at    DateTime   @default(now())
+  payments      Payment[]
+  plan          Plan       @relation(fields: [plan_id], references: [id])
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
 model Payment {
-  id              String   @id @default(uuid())
+  id              String        @id @default(uuid())
   restaurant_id   String
   subscription_id String?
   amount          Float
   method          String
   status          String
   paid_at         DateTime?
-  created_at      DateTime @default(now())
-
-  restaurant   Restaurant  @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
-  subscription Subscription? @relation(fields: [subscription_id], references: [id])
+  created_at      DateTime      @default(now())
+  restaurant      Restaurant    @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  subscription    Subscription? @relation(fields: [subscription_id], references: [id])
 }
 
-// Analytics / Domains
 model AnalyticsEvent {
-  id            Int      @id @default(autoincrement())
+  id            Int        @id @default(autoincrement())
   restaurant_id String
   event_type    String
   page          String?
   ip            String?
   session_id    String?
   user_agent    String?
-  created_at    DateTime @default(now())
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  created_at    DateTime   @default(now())
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
 
 model CustomDomain {
-  id            String   @id @default(uuid())
-  restaurant_id String
-  domain        String   @unique
-  verified      Boolean  @default(false)
-  created_at    DateTime @default(now())
+  id           String      @id @default(uuid())
+  verified     Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  hostname     String      @unique
+  isPrimary    Boolean     @default(false)
+  redirectTo   String?
+  restaurantId String
+  updatedAt    DateTime    @updatedAt
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  primaryOf    Restaurant? @relation("PrimaryDomain")
 
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  @@index([restaurantId])
+  @@index([isPrimary])
 }
 
-// ❓ FAQ pour restaurants
 model Faq {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   restaurant_id String
   question      String
   answer        String
-  position      Int      @default(0)
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
-
-  restaurant Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  position      Int        @default(0)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
 }
