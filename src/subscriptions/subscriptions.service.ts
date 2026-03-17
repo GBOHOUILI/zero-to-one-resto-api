@@ -1,14 +1,15 @@
-// src/subscriptions/subscriptions.service.ts
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CreateSubscriptionDto } from './dto/create-subscription.dto'; // Import ajouté
 
 @Injectable()
 export class SubscriptionsService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Récupère l’abonnement du restaurant associé à l’utilisateur
-   */
   async getMySubscription(userId: string) {
     const profile = await this.prisma.profile.findUnique({
       where: { user_id: userId },
@@ -28,13 +29,13 @@ export class SubscriptionsService {
     });
   }
 
-  /**
-   * Crée un abonnement (utilisé par SUPER_ADMIN pour assigner un plan)
-   */
-  async createSubscription(dto: any) {
-    // Validation minimale – à renforcer avec DTO
-    if (!dto.restaurantId || !dto.planId) {
-      throw new Error('restaurantId et planId requis');
+  async createSubscription(dto: CreateSubscriptionDto) {
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: dto.planId },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Plan introuvable');
     }
 
     return this.prisma.subscription.create({
@@ -42,9 +43,10 @@ export class SubscriptionsService {
         restaurant_id: dto.restaurantId,
         plan_id: dto.planId,
         start_date: new Date(),
-        end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 jours par défaut
-        status: 'active',
+        end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        status: dto.status || 'active',
       },
+      include: { plan: true },
     });
   }
 }

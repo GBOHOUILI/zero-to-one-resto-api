@@ -1,3 +1,4 @@
+// src/tenants/guards/tenant.guard.ts
 import {
   Injectable,
   CanActivate,

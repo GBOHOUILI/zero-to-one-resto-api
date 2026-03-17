@@ -1,74 +1,31 @@
-// src/menus/menus.controller.ts
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Req, NotFoundException } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MenusService } from './menus.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
-import { GetUser } from '../common/get-user.decorator';
-import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
-import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
-import { Role } from '../auth/role.enum';
+import { TenantService } from '../common/services/tenant.service';
+import { Public } from '../auth/public.decorator';
 
-@ApiTags('Menus')
-@ApiBearerAuth('access-token')
+@ApiTags('Client - Menu Digital')
 @Controller('menus')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class MenusController {
-  constructor(private readonly menusService: MenusService) {}
+  constructor(
+    private readonly menusService: MenusService,
+    private readonly tenantService: TenantService,
+  ) {}
 
-  @Get('categories')
-  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
+  @Get('public-catalog')
+  @Public() // Accessible à tous
   @ApiOperation({
-    summary: 'Lister toutes les catégories du restaurant connecté',
+    summary: 'Récupérer la carte complète du restaurant via le domaine actuel',
   })
-  async getCategories(
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
-  ) {
-    return this.menusService.getCategories(userId, role);
-  }
+  async getPublicMenu(@Req() req) {
+    const host = req.headers.host;
+    const tenantId = await this.tenantService.resolveTenant(host);
 
-  @Post('categories')
-  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
-  @ApiOperation({ summary: 'Créer une nouvelle catégorie de menu' })
-  async createCategory(
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
-    @Body() dto: CreateMenuCategoryDto,
-  ) {
-    return this.menusService.createCategory(userId, role, dto);
-  }
+    if (!tenantId) {
+      throw new NotFoundException('Restaurant introuvable pour ce domaine');
+    }
 
-  @Put('categories/:id')
-  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
-  @ApiOperation({ summary: 'Modifier une catégorie existante' })
-  async updateCategory(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
-    @Body() dto: UpdateMenuCategoryDto,
-  ) {
-    return this.menusService.updateCategory(id, userId, role, dto);
-  }
-
-  @Delete('categories/:id')
-  @Roles(Role.SUPER_ADMIN, Role.RESTO_ADMIN)
-  @ApiOperation({ summary: 'Supprimer une catégorie (et ses items)' })
-  async deleteCategory(
-    @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
-  ) {
-    return this.menusService.deleteCategory(id, userId, role);
+    // On récupère les catégories avec leurs items via le service
+    return this.menusService.getPublicMenu(tenantId);
   }
 }

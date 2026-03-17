@@ -11,28 +11,35 @@ import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { Restaurant } from '@prisma/client';
+import { TenantService } from '../common/services/tenant.service';
 
 @Injectable()
 export class RestaurantsService {
   constructor(
     private prisma: PrismaService,
     private mailService: MailService,
+    private tenantService: TenantService,
   ) {}
 
   // ────────────────────────────────────────────────
-  // Liste tous les restaurants (SUPER_ADMIN)
+  // Liste tous les restaurants (tenant-aware)
+  // SUPER_ADMIN voit tous, RESTO_ADMIN voit le sien
   // ────────────────────────────────────────────────
-  async getAll(): Promise<Restaurant[]> {
+  async getAll(tenantId?: string): Promise<Restaurant[]> {
+    const where = tenantId ? { id: tenantId } : {};
     return this.prisma.restaurant.findMany({
+      where,
       orderBy: { created_at: 'desc' },
     });
   }
 
   // ────────────────────────────────────────────────
-  // Récupère le restaurant du proprio (RESTO_ADMIN)
+  // RESTO_ADMIN : récupère le restaurant dont il est propriétaire
+  // tenant-aware
   // ────────────────────────────────────────────────
-  async getByOwner(userId: string): Promise<Restaurant[]> {
+  async getByOwner(userId: string, tenantId?: string): Promise<Restaurant[]> {
     const profile = await this.prisma.profile.findUnique({
       where: { user_id: userId },
       select: { restaurantId: true },
@@ -40,15 +47,21 @@ export class RestaurantsService {
 
     if (!profile?.restaurantId) return [];
 
-    return this.prisma.restaurant.findMany({
-      where: { id: profile.restaurantId },
-    });
+    const where: any = { id: profile.restaurantId };
+    if (tenantId) where.id = tenantId;
+
+    return this.prisma.restaurant.findMany({ where });
   }
 
   // ────────────────────────────────────────────────
-  // Récupère un restaurant par ID + vérif rôle/ownership
+  // Récupération par ID + rôle/ownership + tenant
   // ────────────────────────────────────────────────
-  async getById(id: string, role: string, userId: string): Promise<Restaurant> {
+  async getById(
+    id: string,
+    role: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Restaurant> {
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id },
     });
@@ -67,6 +80,10 @@ export class RestaurantsService {
           'Vous n’êtes pas propriétaire de ce restaurant',
         );
       }
+    }
+
+    if (tenantId && restaurant.id !== tenantId) {
+      throw new NotFoundException('Restaurant introuvable pour ce tenant');
     }
 
     return restaurant;
@@ -162,31 +179,17 @@ export class RestaurantsService {
   }
 
   // ────────────────────────────────────────────────
-  // Mise à jour restaurant
+  // Mise à jour d’un restaurant (SUPER_ADMIN ou RESTO_ADMIN)
+  // tenant-aware
   // ────────────────────────────────────────────────
   async update(
     id: string,
     dto: UpdateRestaurantDto,
     role: string,
     userId: string,
+    tenantId?: string,
   ): Promise<Restaurant> {
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id },
-    });
-
-    if (!restaurant) throw new NotFoundException('Restaurant non trouvé');
-
-    role = role.toUpperCase();
-
-    if (role === 'RESTO_ADMIN') {
-      const profile = await this.prisma.profile.findUnique({
-        where: { user_id: userId },
-        select: { restaurantId: true },
-      });
-      if (profile?.restaurantId !== id) {
-        throw new ForbiddenException('Non autorisé');
-      }
-    }
+    const restaurant = await this.getById(id, role, userId, tenantId);
 
     return this.prisma.restaurant.update({
       where: { id },
@@ -195,10 +198,79 @@ export class RestaurantsService {
   }
 
   // ────────────────────────────────────────────────
-  // Suppression restaurant
+  // Suppression d’un restaurant (SUPER_ADMIN)
+  // tenant-aware
   // ────────────────────────────────────────────────
-  async delete(id: string): Promise<Restaurant> {
+  async delete(id: string, tenantId?: string): Promise<Restaurant> {
+    if (tenantId) {
+      const restaurant = await this.prisma.restaurant.findUnique({
+        where: { id },
+      });
+      if (!restaurant || restaurant.id !== tenantId) {
+        throw new NotFoundException('Restaurant introuvable pour ce tenant');
+      }
+    }
+
     return this.prisma.restaurant.delete({ where: { id } });
+  }
+
+  // Ajoute un domaine personnalisé à un restaurant
+  async addCustomDomain(
+    restaurantId: string,
+    dto: CreateCustomDomainDto,
+    superAdminId: string,
+  ) {
+    // Vérifie que l'utilisateur est bien SUPER_ADMIN
+    const superAdmin = await this.prisma.user.findUnique({
+      where: { id: superAdminId },
+    });
+    if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
+      throw new UnauthorizedException(
+        'Seul un SUPER_ADMIN peut ajouter un domaine',
+      );
+    }
+
+    // Vérifie que le restaurant existe
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+    });
+    if (!restaurant) throw new NotFoundException('Restaurant introuvable');
+
+    // Vérifie que le hostname n'existe pas déjà
+    const existing = await this.prisma.customDomain.findUnique({
+      where: { hostname: dto.hostname.toLowerCase() },
+    });
+    if (existing) throw new BadRequestException('Domaine déjà utilisé');
+
+    // Création du custom domain
+    return this.prisma.customDomain.create({
+      data: {
+        hostname: dto.hostname.toLowerCase(),
+        isPrimary: dto.isPrimary ?? false,
+        restaurantId,
+      },
+    });
+  }
+
+  // supprimer un domaine
+  async removeCustomDomain(domainId: string, superAdminId: string) {
+    const superAdmin = await this.prisma.user.findUnique({
+      where: { id: superAdminId },
+    });
+    if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
+      throw new UnauthorizedException(
+        'Seul un SUPER_ADMIN peut supprimer un domaine',
+      );
+    }
+
+    const domain = await this.prisma.customDomain.findUnique({
+      where: { id: domainId },
+    });
+    if (!domain) throw new NotFoundException('Domaine introuvable');
+
+    return this.prisma.customDomain.delete({
+      where: { id: domainId },
+    });
   }
 
   // ────────────────────────────────────────────────
