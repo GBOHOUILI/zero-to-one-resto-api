@@ -10,25 +10,24 @@ import { AuthService } from './auth.service';
 import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
 import { GetUser } from '../common/get-user.decorator';
-
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 @Controller('auth')
+@ApiTags('Authentication') // Pour grouper dans Swagger
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  // ────────────────────────────────────────────────
-  // REGISTER → Réservé aux SUPER_ADMIN uniquement
-  // ────────────────────────────────────────────────
   @Post('register')
   @UseGuards(RolesGuard)
   @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Créer un nouvel utilisateur (Admin Resto)' })
   async register(
-    @Body('email') email: string,
-    @Body('password') password: string,
-    @Body('role') role: 'super_admin' | 'resto_admin',
+    @Body() registerDto: RegisterDto,
     @GetUser('id') currentUserId: string,
-    @Body('restaurantId') restaurantId?: string,
   ) {
-    // Sécurité supplémentaire
+    const { email, password, role, restaurantId } = registerDto;
+
     if (role === 'super_admin') {
       throw new ForbiddenException(
         'Seul un super admin peut créer un autre super admin',
@@ -39,10 +38,8 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(
-    @Body('email') email: string,
-    @Body('password') password: string,
-  ) {
-    return this.authService.login(email, password);
+  @ApiOperation({ summary: 'Connexion utilisateur' })
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto.email, loginDto.password);
   }
 }
