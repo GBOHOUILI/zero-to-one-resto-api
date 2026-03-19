@@ -49,9 +49,21 @@ export class MenusService {
   }
 
   async createCategory(restaurantId: string, dto: CreateMenuCategoryDto) {
+    let finalPosition = dto.position;
+
+    // Si l'utilisateur n'a pas spécifié de position (ou si c'est 0 par défaut)
+    // on peut chercher la position max actuelle pour mettre la nouvelle à la fin
+    if (!dto.position) {
+      const lastCategory = await this.db(restaurantId).menuCategory.findFirst({
+        orderBy: { position: 'desc' },
+      });
+      finalPosition = lastCategory ? lastCategory.position + 1 : 0;
+    }
+
     return this.db(restaurantId).menuCategory.create({
       data: {
         ...dto,
+        position: finalPosition,
         restaurant_id: restaurantId,
       },
     });
