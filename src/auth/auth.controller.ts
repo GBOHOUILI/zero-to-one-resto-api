@@ -37,4 +37,17 @@ export class AuthController {
   async getMe(@GetUser() user: any) {
     return user;
   }
+  @Public()
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Demander un lien de réinitialisation' })
+  async forgotPassword(@Body('email') email: string) {
+    return this.authService.forgotPassword(email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Confirmer le nouveau mot de passe avec le token' })
+  async resetPassword(@Body() resetDto: { token: string; password: string }) {
+    return this.authService.resetPassword(resetDto.token, resetDto.password);
+  }
 }

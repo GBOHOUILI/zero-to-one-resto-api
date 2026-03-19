@@ -1,4 +1,4 @@
-// src/mail/mail.service.ts (exemple minimal avec console.log fallback)
+// src/mail/mail.service.ts
 import { Injectable } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
@@ -57,6 +57,27 @@ Changez votre mot de passe dès que possible !
     } catch (error) {
       console.error('Erreur envoi email :', error);
       // Ne bloque pas la création → juste log pour l'instant
+    }
+  }
+  async sendResetPasswordEmail(email: string, token: string) {
+    const resetLink = `http://localhost:3000/reset-password?token=${token}`; // À adapter pour ton Front
+
+    try {
+      await this.transporter.sendMail({
+        from: `"Zero To One" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Réinitialisation de votre mot de passe',
+        html: `
+          <h3>Réinitialisation de mot de passe</h3>
+          <p>Vous avez demandé à réinitialiser votre mot de passe pour votre compte Zero To One.</p>
+          <p>Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe. Ce lien expire dans 1 heure.</p>
+          <a href="${resetLink}" style="padding: 10px 20px; background-color: #E67E22; color: white; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a>
+          <p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+        `,
+      });
+      console.log(`Email de reset envoyé à ${email}`);
+    } catch (error) {
+      console.error('Erreur envoi email reset :', error);
     }
   }
 }

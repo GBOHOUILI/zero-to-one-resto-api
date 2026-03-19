@@ -16,6 +16,8 @@ model User {
   id          String       @id @default(uuid())
   email       String       @unique
   password    String
+  reset_token       String?   @unique
+  reset_token_expiry DateTime?
   created_at  DateTime     @default(now())
   role        Role
   profile     Profile?

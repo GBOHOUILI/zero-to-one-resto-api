@@ -3,13 +3,16 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from './role.enum'; // ← import de l'enum
+import { Role } from './role.enum';
+import { MailService } from '../mail/mail.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private mailService: MailService,
   ) {}
 
   // Utilise Role comme type pour le rôle
@@ -84,5 +87,54 @@ export class AuthService {
         restaurantId: user.profile?.restaurantId ?? null,
       },
     };
+  }
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    // Pour la sécurité, on ne dit pas si l'email existe ou pas
+    if (!user) return { message: 'Si cet email existe, un lien a été envoyé.' };
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 1); // Expire dans 1h
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        reset_token: token,
+        reset_token_expiry: expiry,
+      },
+    });
+
+    await this.mailService.sendResetPasswordEmail(user.email, token);
+
+    return { message: 'Si cet email existe, un lien a été envoyé.' };
+  }
+
+  // 2. Logique de changement effectif
+  async resetPassword(token: string, newPassword: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        reset_token: token,
+        reset_token_expiry: { gte: new Date() },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Token invalide ou expiré');
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashed,
+        reset_token: null,
+        reset_token_expiry: null,
+      },
+    });
+
+    return { message: 'Mot de passe mis à jour avec succès.' };
   }
 }
