@@ -66,6 +66,7 @@ model Restaurant {
   page_configs       PageConfig[]
   payments           Payment[]
   promotions         Promotion[]
+  team_members       TeamMember[]
   owner              User             @relation("OwnerRestaurants", fields: [owner_id], references: [id])
   primaryDomain      CustomDomain?    @relation("PrimaryDomain", fields: [primaryDomainId], references: [id])
   social_links       SocialLink?
@@ -269,6 +270,19 @@ model Faq {
   restaurant_id String
   question      String
   answer        String
+  position      Int        @default(0)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+  restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+}
+
+model TeamMember {
+  id            String     @id @default(uuid())
+  restaurant_id String
+  name          String
+  role          String
+  bio           String?    @db.Text
+  image_url     String?
   position      Int        @default(0)
   created_at    DateTime   @default(now())
   updated_at    DateTime   @updatedAt
