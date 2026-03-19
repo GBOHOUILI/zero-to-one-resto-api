@@ -60,7 +60,7 @@ Changez votre mot de passe dès que possible !
     }
   }
   async sendResetPasswordEmail(email: string, token: string) {
-    const resetLink = `http://localhost:3000/reset-password?token=${token}`; // À adapter pour ton Front
+    const resetLink = `http://localhost:3000/reset-password?token=${token}`;
 
     try {
       await this.transporter.sendMail({

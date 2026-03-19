@@ -31,12 +31,17 @@ export class UpdateRestaurantDto {
   @IsOptional()
   name?: string;
 
-  @ApiProperty({ example: 'saveurs-benin-v2', required: false })
+  @ApiProperty({ example: 'Le meilleur de Calavi', required: false })
   @IsString()
   @IsOptional()
-  slug?: string;
+  slogan?: string;
 
-  @ApiProperty({ example: 'Fusion Africaine', required: false })
+  @ApiProperty({ example: 'https://...', required: false })
+  @IsString()
+  @IsOptional()
+  logo_url?: string;
+
+  @ApiProperty({ example: 'Gastronomie', required: false })
   @IsString()
   @IsOptional()
   type?: string;
@@ -49,19 +54,12 @@ export class UpdateRestaurantDto {
   @ApiProperty({ example: '#2ECC71', required: false })
   @IsString()
   @IsOptional()
-  primaryColor?: string;
+  primary_color?: string;
 
   @ApiProperty({ example: 'XOF', required: false })
   @IsString()
   @IsOptional()
   currency?: string;
-
-  @ApiProperty({ type: [UpdateDomainDto], required: false })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => UpdateDomainDto)
-  @IsOptional()
-  customDomains?: UpdateDomainDto[];
 
   @ApiProperty({
     example: ['Gastronomie', 'Calavi'],
@@ -71,5 +69,5 @@ export class UpdateRestaurantDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  seoKeywords?: string[];
+  seo_keywords?: string[];
 }

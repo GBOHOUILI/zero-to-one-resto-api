@@ -167,18 +167,32 @@ export class RestaurantsService {
     }
   }
 
-  async delete(
-    id: string,
-    role: string,
-    tenantId?: string | null,
-  ): Promise<Restaurant> {
-    if (role !== 'SUPER_ADMIN')
-      throw new ForbiddenException('Seul le Super Admin peut supprimer');
+  async delete(slug: string, role: string): Promise<Restaurant> {
+    // 1. Vérification stricte du rôle
+    if (role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        'Seul le Super Admin peut supprimer un restaurant',
+      );
+    }
 
     try {
-      return await this.prisma.restaurant.delete({ where: { id } });
+      // 2. Suppression directe par slug
+      // Prisma remontera une erreur P2025 si le slug n'existe pas
+      return await this.prisma.restaurant.delete({
+        where: { slug },
+      });
     } catch (e) {
-      throw new NotFoundException('Impossible de supprimer ce restaurant');
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException(
+          `Le restaurant avec le slug "${slug}" n'existe pas`,
+        );
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la suppression du restaurant',
+      );
     }
   }
 

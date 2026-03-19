@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Req } from '@nestjs/common';
+import { Controller, Get, Put, Patch, Body, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { RestaurantsService } from './restaurants.service';
 import { Roles } from '../auth/roles.decorator';
@@ -32,6 +32,23 @@ export class RestoAdminRestaurantsController {
     @Body() dto: UpdateRestaurantDto,
   ) {
     // Pas besoin de chercher le resto avant, la RLS d'update() s'occupe de la sécurité
+    return this.restaurantsService.update(
+      restaurantId,
+      dto,
+      role,
+      restaurantId,
+    );
+  }
+
+  @Patch('identity')
+  @ApiOperation({
+    summary: 'Modifier le nom, slogan, logo et type de mon restaurant',
+  })
+  async updateIdentity(
+    @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
+    @Body() dto: UpdateRestaurantDto,
+  ) {
     return this.restaurantsService.update(
       restaurantId,
       dto,

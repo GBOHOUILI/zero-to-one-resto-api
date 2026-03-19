@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -16,6 +17,7 @@ import { Role } from '../auth/role.enum';
 import { GetUser } from '../common/get-user.decorator';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
+import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 
 @ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
@@ -40,10 +42,10 @@ export class SuperAdminRestaurantsController {
     return this.restaurantsService.getAll(Role.SUPER_ADMIN);
   }
 
-  @Delete(':id')
-  @ApiOperation({ summary: 'Supprimer un restaurant et ses données' })
-  async delete(@Param('id') id: string) {
-    return this.restaurantsService.delete(id, Role.SUPER_ADMIN, null);
+  @Delete(':slug')
+  @ApiOperation({ summary: 'Supprimer un restaurant par son slug' })
+  async delete(@Param('slug') slug: string) {
+    return this.restaurantsService.delete(slug, Role.SUPER_ADMIN);
   }
 
   @Post(':id/domains')
@@ -54,5 +56,15 @@ export class SuperAdminRestaurantsController {
   @Delete('domains/:domainId')
   async deleteDomain(@Param('domainId') domainId: string) {
     return this.restaurantsService.removeCustomDomain(domainId);
+  }
+
+  @Patch(':id/identity')
+  @ApiOperation({ summary: "Modifier l'identité de n'importe quel restaurant" })
+  async updateAnyIdentity(
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantDto,
+  ) {
+    // On passe Role.SUPER_ADMIN pour bypasser les restrictions RLS dans le service
+    return this.restaurantsService.update(id, dto, Role.SUPER_ADMIN, id);
   }
 }
