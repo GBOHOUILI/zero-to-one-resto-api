@@ -17,6 +17,7 @@ import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
+import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
 @ApiTags('SA - Gestion des Menus (Global)')
 @ApiBearerAuth('access-token')
@@ -116,5 +117,14 @@ export class SuperAdminMenusController {
     @Body() dto: UpdateMenuItemDto,
   ) {
     return this.menusService.updateItem(id, restaurantId, dto);
+  }
+
+  @Delete('items/:id')
+  @ApiOperation({ summary: 'Supprimer un plat (Super Admin)' })
+  async deleteItem(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.menusService.deleteItem(id, restaurantId);
   }
 }

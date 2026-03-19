@@ -18,6 +18,7 @@ import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
+import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
 @ApiTags('RA - Gestion du Menu')
 @ApiBearerAuth('access-token')
@@ -122,5 +123,14 @@ export class RestoAdminMenusController {
     @Body() dto: UpdateMenuItemDto,
   ) {
     return this.menusService.updateItem(id, restaurantId, dto);
+  }
+
+  @Delete('items/:id')
+  @ApiOperation({ summary: 'Supprimer un plat et son image Cloudinary' })
+  async deleteItem(
+    @Param('id') id: string,
+    @GetUser('restaurantId') restaurantId: string,
+  ) {
+    return this.menusService.deleteItem(id, restaurantId);
   }
 }

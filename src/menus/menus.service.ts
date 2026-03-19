@@ -10,6 +10,7 @@ import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { Prisma } from '@prisma/client';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
+import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
 @Injectable()
 export class MenusService {
@@ -167,41 +168,6 @@ export class MenusService {
     });
   }
 
-  async updateItem(id: string, restaurantId: string, dto: any) {
-    try {
-      return await this.db(restaurantId).menuItem.update({
-        where: { id },
-        data: dto,
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2025'
-      ) {
-        throw new NotFoundException('Plat introuvable ou accès refusé');
-      }
-      throw new InternalServerErrorException(
-        'Erreur lors de la mise à jour du plat',
-      );
-    }
-  }
-
-  async deleteItem(id: string, restaurantId: string) {
-    try {
-      return await this.db(restaurantId).menuItem.delete({
-        where: { id },
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2025'
-      ) {
-        throw new NotFoundException('Plat introuvable ou accès refusé');
-      }
-      throw new InternalServerErrorException('Erreur lors de la suppression');
-    }
-  }
-
   async reorderCategories(restaurantId: string, dto: ReorderCategoriesDto) {
     // On utilise une transaction pour l'atomicité
     return this.prisma.$transaction(
@@ -256,21 +222,42 @@ export class MenusService {
   }
 
   async updateItem(id: string, restaurantId: string, dto: UpdateMenuItemDto) {
+    // Logique de remplacement d'image
+    if (dto.image_url) {
+      const currentItem = await this.db(restaurantId).menuItem.findUnique({
+        where: { id },
+        select: { image_url: true },
+      });
+
+      if (currentItem?.image_url && currentItem.image_url !== dto.image_url) {
+        // TODO: Appeler ton UploadService pour supprimer l'ancienne image Cloudinary
+        console.log('Ancienne image à supprimer:', currentItem.image_url);
+      }
+    }
+
     try {
       return await this.db(restaurantId).menuItem.update({
         where: { id },
         data: dto,
       });
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2025'
-      ) {
-        throw new NotFoundException('Plat introuvable ou accès refusé');
-      }
-      throw new InternalServerErrorException(
-        'Erreur lors de la mise à jour du plat',
-      );
+      throw new InternalServerErrorException('Erreur de mise à jour du plat');
     }
+  }
+
+  async deleteItem(id: string, restaurantId: string) {
+    const item = await this.db(restaurantId).menuItem.findUnique({
+      where: { id },
+      select: { image_url: true },
+    });
+
+    if (!item) throw new NotFoundException('Plat introuvable');
+
+    if (item.image_url) {
+      // TODO: Appeler ton UploadService pour supprimer l'image Cloudinary
+      console.log('Image Cloudinary à supprimer:', item.image_url);
+    }
+
+    return await this.db(restaurantId).menuItem.delete({ where: { id } });
   }
 }
