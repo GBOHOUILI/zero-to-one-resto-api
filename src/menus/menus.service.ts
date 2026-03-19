@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { Prisma } from '@prisma/client';
+import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 
 @Injectable()
 export class MenusService {
@@ -91,6 +92,20 @@ export class MenusService {
   }
 
   async deleteCategory(id: string, restaurantId: string) {
+    // 1. Vérifier si la catégorie contient des plats
+    const category = await this.db(restaurantId).menuCategory.findUnique({
+      where: { id },
+      include: { _count: { select: { menu_items: true } } },
+    });
+
+    if (!category) throw new NotFoundException('Catégorie introuvable');
+
+    if (category._count.menu_items > 0) {
+      throw new ForbiddenException(
+        'Impossible de supprimer une catégorie qui contient encore des plats. Videz-la d’abord.',
+      );
+    }
+
     try {
       return await this.db(restaurantId).menuCategory.delete({
         where: { id },
@@ -165,5 +180,17 @@ export class MenusService {
       }
       throw new InternalServerErrorException('Erreur lors de la suppression');
     }
+  }
+
+  async reorderCategories(restaurantId: string, dto: ReorderCategoriesDto) {
+    // On utilise une transaction pour l'atomicité
+    return this.prisma.$transaction(
+      dto.categories.map((cat) =>
+        this.db(restaurantId).menuCategory.update({
+          where: { id: cat.id },
+          data: { position: cat.position },
+        }),
+      ),
+    );
   }
 }
