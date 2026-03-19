@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Patch,
+  Query,
   Delete,
   Body,
   Param,
@@ -87,5 +88,23 @@ export class SuperAdminMenusController {
     @Body() dto: ReorderCategoriesDto,
   ) {
     return this.menusService.reorderCategories(restaurantId, dto);
+  }
+
+  @Get('items')
+  @ApiOperation({ summary: 'Lister les plats avec filtres et pagination' })
+  async getItems(
+    @Param('restaurantId') restaurantId: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('available') available?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.menusService.getItems(restaurantId, {
+      categoryId,
+      available:
+        available === 'true' ? true : available === 'false' ? false : undefined,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
+    });
   }
 }

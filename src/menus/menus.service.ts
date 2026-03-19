@@ -9,6 +9,7 @@ import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { Prisma } from '@prisma/client';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
+import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 
 @Injectable()
 export class MenusService {
@@ -125,7 +126,6 @@ export class MenusService {
    * GESTION DES ITEMS (PLATS)
    */
   async createItem(restaurantId: string, dto: CreateMenuItemDto) {
-    // 1. Vérifier que la catégorie appartient bien au restaurant (Sécurité RLS)
     const category = await this.db(restaurantId).menuCategory.findUnique({
       where: { id: dto.category_id },
     });
@@ -136,7 +136,6 @@ export class MenusService {
 
     let finalPosition = dto.position;
 
-    // 2. Gestion auto de la position si non fournie
     if (dto.position === undefined || dto.position === null) {
       const lastItem = await this.db(restaurantId).menuItem.findFirst({
         where: { category_id: dto.category_id },
@@ -145,17 +144,17 @@ export class MenusService {
       finalPosition = lastItem ? lastItem.position + 1 : 0;
     }
 
-    // 3. Création
     return this.db(restaurantId).menuItem.create({
       data: {
         name: dto.name,
         short_description: dto.short_description,
         price: dto.price,
-        image_url: dto.image_url, // L'URL venant de Cloudinary
+        image_url: dto.image_url,
         available: dto.available ?? true,
         category_id: dto.category_id,
         restaurant_id: restaurantId,
         position: finalPosition,
+        category_type: dto.category_type,
       },
     });
   }
@@ -213,5 +212,46 @@ export class MenusService {
         }),
       ),
     );
+  }
+
+  async getItems(
+    restaurantId: string,
+    filters: {
+      categoryId?: string;
+      available?: boolean;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const { categoryId, available, page = 1, limit = 20 } = filters;
+    const skip = (page - 1) * limit;
+
+    // Construction dynamique du "where"
+    const where: Prisma.MenuItemWhereInput = {
+      restaurant_id: restaurantId,
+    };
+
+    if (categoryId) where.category_id = categoryId;
+    if (available !== undefined) where.available = available;
+
+    const [items, total] = await Promise.all([
+      this.db(restaurantId).menuItem.findMany({
+        where,
+        orderBy: { position: 'asc' },
+        skip,
+        take: limit,
+        include: { category: { select: { name: true } } },
+      }),
+      this.db(restaurantId).menuItem.count({ where }),
+    ]);
+
+    return {
+      data: items,
+      meta: {
+        total,
+        page,
+        lastPage: Math.ceil(total / limit),
+      },
+    };
   }
 }

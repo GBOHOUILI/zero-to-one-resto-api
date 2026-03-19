@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsOptional,
   IsUUID,
+  IsUrl,
 } from 'class-validator';
 
 export class CreateMenuItemDto {
@@ -24,6 +25,14 @@ export class CreateMenuItemDto {
   @ApiProperty({ example: 2500 })
   @IsNumber()
   price: number;
+
+  @ApiProperty({
+    example: 'https://cloudinary.com/votre-image.jpg',
+    required: false,
+  })
+  @IsOptional()
+  @IsUrl() // On valide que c'est une URL valide
+  image_url?: string;
 
   @ApiProperty({ example: 'FOOD', default: 'FOOD' })
   @IsString()
