@@ -14,6 +14,7 @@ import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { Restaurant, Prisma } from '@prisma/client';
+import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 
 @Injectable()
 export class RestaurantsService {
@@ -259,6 +260,38 @@ export class RestaurantsService {
         google_maps_url: dto.google_maps_url,
         restaurant_id: restaurantId,
       },
+    });
+  }
+
+  async updateOpeningHours(
+    restaurantId: string,
+    hours: CreateOpeningHourDto[],
+    role: string,
+  ): Promise<any> {
+    const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(restaurantId);
+
+    // Validation métier : On vérifie chaque ligne
+    for (const h of hours) {
+      if (!h.is_closed && h.open_time >= h.close_time) {
+        throw new BadRequestException(
+          `L'heure de fermeture doit être après l'heure d'ouverture pour le jour ${h.day_of_week}`,
+        );
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Nettoyage des anciens horaires pour ce restaurant
+      await tx.openingHour.deleteMany({
+        where: { restaurant_id: restaurantId },
+      });
+
+      // Insertion des nouveaux
+      return tx.openingHour.createMany({
+        data: hours.map((h) => ({
+          ...h,
+          restaurant_id: restaurantId,
+        })),
+      });
     });
   }
 }

@@ -6,6 +6,7 @@ import { Role } from '../auth/role.enum';
 import { GetUser } from '../common/get-user.decorator';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
+import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { TenantService } from '../common/services/tenant.service';
 
 @ApiTags('RESTO_ADMIN - Mon Restaurant')
@@ -67,5 +68,15 @@ export class RestoAdminRestaurantsController {
     @Body() dto: UpdateContactDto,
   ) {
     return this.restaurantsService.updateContact(restaurantId, dto, role);
+  }
+
+  @Put('opening-hours')
+  @ApiOperation({ summary: 'Mettre à jour tous les horaires du restaurant' })
+  async updateMyHours(
+    @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
+    @Body() dto: CreateOpeningHourDto[],
+  ) {
+    return this.restaurantsService.updateOpeningHours(restaurantId, dto, role);
   }
 }

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -18,6 +19,7 @@ import { GetUser } from '../common/get-user.decorator';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 
 @ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
@@ -66,5 +68,19 @@ export class SuperAdminRestaurantsController {
   ) {
     // On passe Role.SUPER_ADMIN pour bypasser les restrictions RLS dans le service
     return this.restaurantsService.update(id, dto, Role.SUPER_ADMIN, id);
+  }
+
+  @Put(':id/opening-hours')
+  @ApiOperation({ summary: "Gérer les horaires d'un restaurant spécifique" })
+  async updateAnyOpeningHours(
+    @Param('id') id: string,
+    @Body() dto: CreateOpeningHourDto[], // Ou ton wrapper DTO
+  ) {
+    // On passe Role.SUPER_ADMIN pour utiliser le Prisma standard (bypass RLS)
+    return this.restaurantsService.updateOpeningHours(
+      id,
+      dto,
+      Role.SUPER_ADMIN,
+    );
   }
 }
