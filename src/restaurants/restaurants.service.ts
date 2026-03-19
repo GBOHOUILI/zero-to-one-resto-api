@@ -15,6 +15,7 @@ import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { Restaurant, Prisma } from '@prisma/client';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
+import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 
 @Injectable()
 export class RestaurantsService {
@@ -292,6 +293,23 @@ export class RestaurantsService {
           restaurant_id: restaurantId,
         })),
       });
+    });
+  }
+
+  async updateSocialLinks(
+    restaurantId: string,
+    dto: UpdateSocialLinksDto,
+    role: string,
+  ): Promise<any> {
+    const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(restaurantId);
+
+    return client.socialLink.upsert({
+      where: { restaurant_id: restaurantId },
+      update: dto,
+      create: {
+        ...dto,
+        restaurant_id: restaurantId,
+      },
     });
   }
 }

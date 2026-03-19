@@ -7,6 +7,7 @@ import { GetUser } from '../common/get-user.decorator';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
+import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { TenantService } from '../common/services/tenant.service';
 
 @ApiTags('RESTO_ADMIN - Mon Restaurant')
@@ -78,5 +79,15 @@ export class RestoAdminRestaurantsController {
     @Body() dto: CreateOpeningHourDto[],
   ) {
     return this.restaurantsService.updateOpeningHours(restaurantId, dto, role);
+  }
+
+  @Patch('social-links')
+  @ApiOperation({ summary: 'Mettre à jour mes réseaux sociaux' })
+  async updateMySocials(
+    @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
+    @Body() dto: UpdateSocialLinksDto,
+  ) {
+    return this.restaurantsService.updateSocialLinks(restaurantId, dto, role);
   }
 }

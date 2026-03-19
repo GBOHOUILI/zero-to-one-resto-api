@@ -20,6 +20,7 @@ import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
+import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 
 @ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
@@ -74,7 +75,7 @@ export class SuperAdminRestaurantsController {
   @ApiOperation({ summary: "Gérer les horaires d'un restaurant spécifique" })
   async updateAnyOpeningHours(
     @Param('id') id: string,
-    @Body() dto: CreateOpeningHourDto[], // Ou ton wrapper DTO
+    @Body() dto: CreateOpeningHourDto[],
   ) {
     // On passe Role.SUPER_ADMIN pour utiliser le Prisma standard (bypass RLS)
     return this.restaurantsService.updateOpeningHours(
@@ -82,5 +83,16 @@ export class SuperAdminRestaurantsController {
       dto,
       Role.SUPER_ADMIN,
     );
+  }
+
+  @Patch(':id/social-links')
+  @ApiOperation({
+    summary: "Modifier les réseaux sociaux d'un restaurant spécifique",
+  })
+  async updateAnySocials(
+    @Param('id') id: string,
+    @Body() dto: UpdateSocialLinksDto,
+  ) {
+    return this.restaurantsService.updateSocialLinks(id, dto, Role.SUPER_ADMIN);
   }
 }
