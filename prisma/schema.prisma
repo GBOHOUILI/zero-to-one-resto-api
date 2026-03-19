@@ -18,6 +18,7 @@ model User {
   password    String
   reset_token       String?   @unique
   reset_token_expiry DateTime?
+  refresh_token String?
   created_at  DateTime     @default(now())
   role        Role
   profile     Profile?

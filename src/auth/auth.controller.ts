@@ -50,4 +50,14 @@ export class AuthController {
   async resetPassword(@Body() resetDto: { token: string; password: string }) {
     return this.authService.resetPassword(resetDto.token, resetDto.password);
   }
+
+  @Public()
+  @Post('refresh')
+  @ApiOperation({ summary: 'Renouveler le token access' })
+  async refresh(
+    @Body('userId') userId: string,
+    @Body('refreshToken') refreshToken: string,
+  ) {
+    return this.authService.refreshTokens(userId, refreshToken);
+  }
 }

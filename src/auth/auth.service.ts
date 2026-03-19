@@ -1,5 +1,9 @@
 // src/auth/auth.service.ts
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
@@ -15,7 +19,7 @@ export class AuthService {
     private mailService: MailService,
   ) {}
 
-  // Utilise Role comme type pour le rôle
+  // Enregistrement d'un utilisateur
   async register(
     email: string,
     password: string,
@@ -32,7 +36,7 @@ export class AuthService {
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await this.prisma.user.create({
-      data: { email, password: hashed, role }, // Role enum utilisé ici
+      data: { email, password: hashed, role },
       include: { profile: true },
     });
 
@@ -52,58 +56,54 @@ export class AuthService {
     };
   }
 
+  // Connexion
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { profile: { select: { restaurantId: true } } },
     });
 
-    if (!user) {
-      throw new UnauthorizedException({ message: 'Utilisateur non trouvé' });
-    }
-
-    if (!user.password) {
-      throw new UnauthorizedException({ message: 'Le compte est invalide' });
+    if (!user || !user.password) {
+      throw new UnauthorizedException('Identifiants invalides');
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      throw new UnauthorizedException({ message: 'Mot de passe incorrect' });
+      throw new UnauthorizedException('Identifiants invalides');
     }
 
-    const payload = {
-      sub: user.id,
-      role: user.role as Role, // assure TypeScript que c’est un Role
-      restaurantId: user.profile?.restaurantId ?? null,
-    };
+    const tokens = await this.getTokens(
+      user.id,
+      user.email,
+      user.role as Role,
+      user.profile?.restaurantId ?? null,
+    );
+
+    await this.updateRtHash(user.id, tokens.refresh_token);
 
     return {
-      message: 'Connexion réussie',
-      access_token: this.jwtService.sign(payload),
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
-        role: user.role as Role,
+        role: user.role,
         restaurantId: user.profile?.restaurantId ?? null,
       },
     };
   }
+
+  // Mot de passe oublié
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-
-    // Pour la sécurité, on ne dit pas si l'email existe ou pas
     if (!user) return { message: 'Si cet email existe, un lien a été envoyé.' };
 
     const token = crypto.randomBytes(32).toString('hex');
     const expiry = new Date();
-    expiry.setHours(expiry.getHours() + 1); // Expire dans 1h
+    expiry.setHours(expiry.getHours() + 1);
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: {
-        reset_token: token,
-        reset_token_expiry: expiry,
-      },
+      data: { reset_token: token, reset_token_expiry: expiry },
     });
 
     await this.mailService.sendResetPasswordEmail(user.email, token);
@@ -111,7 +111,7 @@ export class AuthService {
     return { message: 'Si cet email existe, un lien a été envoyé.' };
   }
 
-  // 2. Logique de changement effectif
+  // Réinitialisation du mot de passe
   async resetPassword(token: string, newPassword: string) {
     const user = await this.prisma.user.findFirst({
       where: {
@@ -120,21 +120,72 @@ export class AuthService {
       },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('Token invalide ou expiré');
-    }
+    if (!user) throw new UnauthorizedException('Token invalide ou expiré');
 
     const hashed = await bcrypt.hash(newPassword, 10);
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: {
-        password: hashed,
-        reset_token: null,
-        reset_token_expiry: null,
-      },
+      data: { password: hashed, reset_token: null, reset_token_expiry: null },
     });
 
     return { message: 'Mot de passe mis à jour avec succès.' };
+  }
+
+  // Génération de tokens JWT
+  async getTokens(
+    userId: string,
+    email: string,
+    role: Role,
+    restaurantId: string | null,
+  ) {
+    const payload = { sub: userId, email, role, restaurantId };
+
+    const [access_token, refresh_token] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: process.env.JWT_SECRET,
+        expiresIn: '15m',
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: process.env.JWT_REFRESH_SECRET,
+        expiresIn: '7d',
+      }),
+    ]);
+
+    return { access_token, refresh_token };
+  }
+
+  // Stocker le refresh token haché
+  async updateRtHash(userId: string, rt: string) {
+    const hash = await bcrypt.hash(rt, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refresh_token: hash },
+    });
+  }
+
+  // Rafraîchir les tokens
+  async refreshTokens(userId: string, rt: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.refresh_token)
+      throw new ForbiddenException('Accès refusé');
+
+    const rtMatches = await bcrypt.compare(rt, user.refresh_token);
+    if (!rtMatches) throw new ForbiddenException('Accès refusé');
+
+    const profile = await this.prisma.profile.findUnique({
+      where: { user_id: userId },
+    });
+
+    const tokens = await this.getTokens(
+      user.id,
+      user.email,
+      user.role as Role,
+      profile?.restaurantId ?? null,
+    );
+
+    await this.updateRtHash(user.id, tokens.refresh_token);
+
+    return tokens;
   }
 }
