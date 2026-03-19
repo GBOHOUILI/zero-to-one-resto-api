@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Patch, Body, Req } from '@nestjs/common';
+import { Controller, Get, Put, Patch, Param, Body, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { RestaurantsService } from './restaurants.service';
 import { Roles } from '../auth/roles.decorator';
@@ -10,6 +10,7 @@ import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { TenantService } from '../common/services/tenant.service';
 import { UpdateDesignDto } from './dto/update-design.dto';
+import { UpdatePageConfigDto } from './dto/update-page-config.dto';
 
 @ApiTags('RESTO_ADMIN - Mon Restaurant')
 @ApiBearerAuth('access-token')
@@ -101,5 +102,26 @@ export class RestoAdminRestaurantsController {
     @Body() dto: UpdateDesignDto,
   ) {
     return this.restaurantsService.updateDesign(restaurantId, dto);
+  }
+
+  @Get('pages/:slug')
+  @ApiOperation({
+    summary: 'Récupérer le contenu d’une page spécifique (home, about, etc.)',
+  })
+  async getPageContent(
+    @GetUser('restaurantId') restaurantId: string,
+    @Param('slug') slug: string,
+  ) {
+    return this.restaurantsService.getPageConfig(restaurantId, slug);
+  }
+
+  @Patch('pages/:slug')
+  @ApiOperation({ summary: 'Mettre à jour le contenu d’une page' })
+  async updatePageContent(
+    @GetUser('restaurantId') restaurantId: string,
+    @Param('slug') slug: string,
+    @Body() dto: UpdatePageConfigDto,
+  ) {
+    return this.restaurantsService.updatePageConfig(restaurantId, slug, dto);
   }
 }

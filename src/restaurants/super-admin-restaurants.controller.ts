@@ -22,6 +22,7 @@ import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { UpdateDesignDto } from './dto/update-design.dto';
+import { UpdatePageConfigDto } from './dto/update-page-config.dto';
 
 @ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
@@ -103,5 +104,27 @@ export class SuperAdminRestaurantsController {
   })
   async updateDesign(@Param('id') id: string, @Body() dto: UpdateDesignDto) {
     return this.restaurantsService.updateDesign(id, dto);
+  }
+
+  @Get(':id/pages/:slug')
+  @ApiOperation({
+    summary:
+      'Récupérer le contenu d’une page pour un restaurant spécifique (Super Admin)',
+  })
+  async getPageConfig(@Param('id') id: string, @Param('slug') slug: string) {
+    return this.restaurantsService.getPageConfig(id, slug);
+  }
+
+  @Patch(':id/pages/:slug')
+  @ApiOperation({
+    summary:
+      'Modifier le contenu d’une page pour un restaurant spécifique (Super Admin)',
+  })
+  async updatePageConfig(
+    @Param('id') id: string,
+    @Param('slug') slug: string,
+    @Body() dto: UpdatePageConfigDto,
+  ) {
+    return this.restaurantsService.updatePageConfig(id, slug, dto);
   }
 }

@@ -17,6 +17,7 @@ import { Restaurant, Prisma } from '@prisma/client';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { UpdateDesignDto } from './dto/update-design.dto';
+import { UpdatePageConfigDto } from './dto/update-page-config.dto';
 
 @Injectable()
 export class RestaurantsService {
@@ -332,5 +333,50 @@ export class RestaurantsService {
         'Impossible de mettre à jour le design',
       );
     }
+  }
+
+  async updatePageConfig(
+    restaurantId: string,
+    pageSlug: string,
+    dto: UpdatePageConfigDto,
+  ) {
+    try {
+      return await this.prisma.pageConfig.upsert({
+        where: {
+          restaurant_id_page_slug: {
+            restaurant_id: restaurantId,
+            page_slug: pageSlug,
+          },
+        },
+        update: dto,
+        create: {
+          ...dto,
+          restaurant_id: restaurantId,
+          page_slug: pageSlug,
+          hero_media_type: dto.hero_media_type || 'image',
+          hero_media_url: dto.hero_media_url || '',
+        },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Erreur lors de la mise à jour de la page ${pageSlug}`,
+      );
+    }
+  }
+
+  async getPageConfig(restaurantId: string, pageSlug: string) {
+    const config = await this.prisma.pageConfig.findUnique({
+      where: {
+        restaurant_id_page_slug: {
+          restaurant_id: restaurantId,
+          page_slug: pageSlug,
+        },
+      },
+    });
+    if (!config)
+      throw new NotFoundException(
+        `Configuration pour la page ${pageSlug} introuvable`,
+      );
+    return config;
   }
 }
