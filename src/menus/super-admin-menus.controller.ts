@@ -18,6 +18,7 @@ import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
+import { ToggleAvailabilityDto } from './dto/toggle-availability.dto';
 
 @ApiTags('SA - Gestion des Menus (Global)')
 @ApiBearerAuth('access-token')
@@ -126,5 +127,21 @@ export class SuperAdminMenusController {
     @Param('id') id: string,
   ) {
     return this.menusService.deleteItem(id, restaurantId);
+  }
+
+  @Patch('items/:id/availability')
+  @ApiOperation({
+    summary: 'Modifier la disponibilité d’un plat (Super Admin)',
+  })
+  async toggleItemAvailability(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+    @Body() dto: ToggleAvailabilityDto,
+  ) {
+    return this.menusService.toggleItemAvailability(
+      id,
+      restaurantId,
+      dto.available,
+    );
   }
 }

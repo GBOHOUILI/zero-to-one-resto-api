@@ -260,4 +260,27 @@ export class MenusService {
 
     return await this.db(restaurantId).menuItem.delete({ where: { id } });
   }
+
+  async toggleItemAvailability(
+    id: string,
+    restaurantId: string,
+    available: boolean,
+  ) {
+    try {
+      return await this.db(restaurantId).menuItem.update({
+        where: { id },
+        data: { available },
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Plat introuvable');
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors du changement de disponibilité',
+      );
+    }
+  }
 }
