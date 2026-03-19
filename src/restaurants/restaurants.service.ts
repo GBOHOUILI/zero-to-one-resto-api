@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { Restaurant, Prisma } from '@prisma/client';
 
@@ -227,5 +228,37 @@ export class RestaurantsService {
     } catch (e) {
       throw new NotFoundException('Domaine introuvable');
     }
+  }
+
+  async updateContact(
+    restaurantId: string,
+    dto: UpdateContactDto,
+    role: string,
+  ): Promise<any> {
+    const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(restaurantId);
+
+    // Vérifier si le contact existe déjà
+    const existing = await client.contact.findUnique({
+      where: { restaurant_id: restaurantId },
+    });
+
+    if (!existing && !dto.whatsapp) {
+      throw new BadRequestException(
+        'Le numéro WhatsApp est obligatoire pour configurer les contacts.',
+      );
+    }
+
+    return client.contact.upsert({
+      where: { restaurant_id: restaurantId },
+      update: dto,
+      create: {
+        whatsapp: dto.whatsapp!,
+        phone: dto.phone,
+        email: dto.email,
+        address: dto.address,
+        google_maps_url: dto.google_maps_url,
+        restaurant_id: restaurantId,
+      },
+    });
   }
 }

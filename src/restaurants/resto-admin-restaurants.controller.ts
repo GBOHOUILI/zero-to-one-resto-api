@@ -5,6 +5,7 @@ import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { GetUser } from '../common/get-user.decorator';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { UpdateContactDto } from './dto/update-contact.dto';
 import { TenantService } from '../common/services/tenant.service';
 
 @ApiTags('RESTO_ADMIN - Mon Restaurant')
@@ -31,7 +32,6 @@ export class RestoAdminRestaurantsController {
     @GetUser('role') role: string,
     @Body() dto: UpdateRestaurantDto,
   ) {
-    // Pas besoin de chercher le resto avant, la RLS d'update() s'occupe de la sécurité
     return this.restaurantsService.update(
       restaurantId,
       dto,
@@ -55,5 +55,17 @@ export class RestoAdminRestaurantsController {
       role,
       restaurantId,
     );
+  }
+
+  @Patch('contact')
+  @ApiOperation({
+    summary: 'Mettre à jour mes coordonnées (WhatsApp, Maps, etc.)',
+  })
+  async updateMyContact(
+    @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
+    @Body() dto: UpdateContactDto,
+  ) {
+    return this.restaurantsService.updateContact(restaurantId, dto, role);
   }
 }
