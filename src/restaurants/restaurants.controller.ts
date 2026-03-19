@@ -15,22 +15,14 @@ export class RestaurantsController {
 
   @Get('public')
   @Public()
-  @ApiOperation({
-    summary: 'Récupère les infos du restaurant via le domaine actuel',
-  })
   async getPublic(@Req() req) {
     const host = req.headers.host;
     const tenantId = await this.tenantService.resolveTenant(host);
 
     if (!tenantId) {
-      throw new NotFoundException('Aucun restaurant trouvé pour ce domaine');
+      throw new NotFoundException('Aucun restaurant trouvé');
     }
 
-    return this.restaurantsService.getById(
-      tenantId,
-      Role.SUPER_ADMIN,
-      'PUBLIC_VISITOR',
-      tenantId,
-    );
+    return this.restaurantsService.getById(tenantId, 'SUPER_ADMIN', tenantId);
   }
 }

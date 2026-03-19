@@ -1,10 +1,10 @@
-// src/restaurants/restaurants.service.ts
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -12,85 +12,63 @@ import { MailService } from '../mail/mail.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
-import { Restaurant } from '@prisma/client';
-import { TenantService } from '../common/services/tenant.service';
+import { Restaurant, Prisma } from '@prisma/client';
 
 @Injectable()
 export class RestaurantsService {
   constructor(
     private prisma: PrismaService,
     private mailService: MailService,
-    private tenantService: TenantService,
   ) {}
 
+  // Utilitaire pour le client RLS
+  private db(tenantId: string) {
+    return this.prisma.withTenant(tenantId);
+  }
+
   // ────────────────────────────────────────────────
-  // Liste tous les restaurants (tenant-aware)
-  // SUPER_ADMIN voit tous, RESTO_ADMIN voit le sien
+  // Lecture : SUPER_ADMIN voit tout, RESTO_ADMIN voit le sien
   // ────────────────────────────────────────────────
-  async getAll(tenantId?: string): Promise<Restaurant[]> {
-    const where = tenantId ? { id: tenantId } : {};
+  async getAll(role: string, tenantId?: string): Promise<Restaurant[]> {
+    // Si c'est un admin de resto, on force le filtrage RLS
+    if (role !== 'SUPER_ADMIN' && tenantId) {
+      return this.db(tenantId).restaurant.findMany();
+    }
+    // Sinon (SUPER_ADMIN), on bypass la RLS en utilisant le prisma standard
     return this.prisma.restaurant.findMany({
-      where,
       orderBy: { created_at: 'desc' },
     });
   }
 
-  // ────────────────────────────────────────────────
-  // RESTO_ADMIN : récupère le restaurant dont il est propriétaire
-  // tenant-aware
-  // ────────────────────────────────────────────────
-  async getByOwner(userId: string, tenantId?: string): Promise<Restaurant[]> {
-    const profile = await this.prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { restaurantId: true },
-    });
-
-    if (!profile?.restaurantId) return [];
-
-    const where: any = { id: profile.restaurantId };
-    if (tenantId) where.id = tenantId;
-
-    return this.prisma.restaurant.findMany({ where });
-  }
-
-  // ────────────────────────────────────────────────
-  // Récupération par ID + rôle/ownership + tenant
-  // ────────────────────────────────────────────────
   async getById(
     id: string,
     role: string,
-    userId: string,
     tenantId?: string,
   ): Promise<Restaurant> {
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id },
-    });
+    try {
+      const client =
+        role !== 'SUPER_ADMIN' && tenantId ? this.db(tenantId) : this.prisma;
 
-    if (!restaurant) throw new NotFoundException('Restaurant non trouvé');
-
-    role = role.toUpperCase();
-
-    if (role === 'RESTO_ADMIN') {
-      const profile = await this.prisma.profile.findUnique({
-        where: { user_id: userId },
-        select: { restaurantId: true },
+      const restaurant = await client.restaurant.findUnique({
+        where: { id },
+        include: { custom_domains: true },
       });
-      if (profile?.restaurantId !== id) {
-        throw new ForbiddenException(
-          'Vous n’êtes pas propriétaire de ce restaurant',
-        );
+
+      if (!restaurant) throw new NotFoundException('Restaurant non trouvé');
+      return restaurant;
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Accès au restaurant refusé');
       }
+      throw e;
     }
-
-    if (tenantId && restaurant.id !== tenantId) {
-      throw new NotFoundException('Restaurant introuvable pour ce tenant');
-    }
-
-    return restaurant;
   }
 
   // ────────────────────────────────────────────────
-  // Création d’un restaurant (SUPER_ADMIN uniquement)
+  // Création : Action "God Mode" (bypass RLS car nouvelle entrée)
   // ────────────────────────────────────────────────
   async createRestaurant(
     superAdminId: string,
@@ -99,8 +77,7 @@ export class RestaurantsService {
     const superAdmin = await this.prisma.user.findUnique({
       where: { id: superAdminId },
     });
-
-    if (!superAdmin || superAdmin.role.toUpperCase() !== 'SUPER_ADMIN') {
+    if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
       throw new UnauthorizedException(
         'Seul un super admin peut créer un restaurant',
       );
@@ -109,7 +86,6 @@ export class RestaurantsService {
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.adminEmail },
     });
-
     if (existing) throw new BadRequestException('Cet email est déjà utilisé');
 
     const password = this.generateRandomPassword(12);
@@ -117,7 +93,6 @@ export class RestaurantsService {
 
     return this.prisma
       .$transaction(async (tx) => {
-        // Création du RESTO_ADMIN
         const restoAdmin = await tx.user.create({
           data: {
             email: dto.adminEmail,
@@ -126,31 +101,19 @@ export class RestaurantsService {
           },
         });
 
-        // Création du restaurant
         const restaurant = await tx.restaurant.create({
           data: {
             name: dto.name,
             slug: dto.slug,
             owner_id: restoAdmin.id,
-            type: dto.type ?? 'default',
-            template: dto.template ?? 'default',
-            primary_color: dto.primaryColor ?? '#000000',
-            currency: dto.currency ?? 'XOF',
             status: 'incomplete',
-            seo_keywords: dto.seoKeywords ?? [],
-            custom_domains: dto.customDomains
-              ? {
-                  create: dto.customDomains.map((d) => ({
-                    hostname: d.hostname.toLowerCase(),
-                    isPrimary: d.isPrimary ?? false,
-                    verified: d.verified ?? false,
-                  })),
-                }
-              : undefined,
+            type: 'default',
+            template: 'default',
+            primary_color: '#000000',
+            currency: 'XOF',
           },
         });
 
-        // Mise à jour/creation du profile
         await tx.profile.upsert({
           where: { user_id: restoAdmin.id },
           update: { restaurantId: restaurant.id },
@@ -163,86 +126,76 @@ export class RestaurantsService {
 
         return restaurant;
       })
-      .then(async (restaurant) => {
-        try {
-          await this.mailService.sendRestaurantCreationEmails(
-            superAdmin.email,
-            dto.adminEmail,
-            restaurant,
-            password,
-          );
-        } catch (err) {
-          console.error('Échec envoi email', err);
-        }
-        return restaurant;
+      .then(async (res) => {
+        await this.mailService.sendRestaurantCreationEmails(
+          superAdmin.email,
+          dto.adminEmail,
+          res,
+          password,
+        );
+        return res;
       });
   }
 
   // ────────────────────────────────────────────────
-  // Mise à jour d’un restaurant (SUPER_ADMIN ou RESTO_ADMIN)
-  // tenant-aware
+  // Update & Delete : Sécurisés par RLS
   // ────────────────────────────────────────────────
   async update(
     id: string,
     dto: UpdateRestaurantDto,
     role: string,
-    userId: string,
-    tenantId?: string,
+    tenantId: string,
   ): Promise<Restaurant> {
-    const restaurant = await this.getById(id, role, userId, tenantId);
+    try {
+      // Si RESTO_ADMIN, la RLS empêchera de modifier un autre ID que le sien
+      const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(tenantId);
 
-    return this.prisma.restaurant.update({
-      where: { id },
-      data: dto,
-    });
-  }
-
-  // ────────────────────────────────────────────────
-  // Suppression d’un restaurant (SUPER_ADMIN)
-  // tenant-aware
-  // ────────────────────────────────────────────────
-  async delete(id: string, tenantId?: string): Promise<Restaurant> {
-    if (tenantId) {
-      const restaurant = await this.prisma.restaurant.findUnique({
+      return await client.restaurant.update({
         where: { id },
+        data: dto,
       });
-      if (!restaurant || restaurant.id !== tenantId) {
-        throw new NotFoundException('Restaurant introuvable pour ce tenant');
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new ForbiddenException(
+          'Modification interdite ou restaurant inexistant',
+        );
       }
+      throw new InternalServerErrorException('Erreur lors de la mise à jour');
     }
-
-    return this.prisma.restaurant.delete({ where: { id } });
   }
 
-  // Ajoute un domaine personnalisé à un restaurant
-  async addCustomDomain(
-    restaurantId: string,
-    dto: CreateCustomDomainDto,
-    superAdminId: string,
-  ) {
-    // Vérifie que l'utilisateur est bien SUPER_ADMIN
-    const superAdmin = await this.prisma.user.findUnique({
-      where: { id: superAdminId },
-    });
-    if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
-      throw new UnauthorizedException(
-        'Seul un SUPER_ADMIN peut ajouter un domaine',
-      );
+  async delete(
+    id: string,
+    role: string,
+    tenantId?: string | null,
+  ): Promise<Restaurant> {
+    if (role !== 'SUPER_ADMIN')
+      throw new ForbiddenException('Seul le Super Admin peut supprimer');
+
+    try {
+      return await this.prisma.restaurant.delete({ where: { id } });
+    } catch (e) {
+      throw new NotFoundException('Impossible de supprimer ce restaurant');
     }
+  }
 
-    // Vérifie que le restaurant existe
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: restaurantId },
-    });
-    if (!restaurant) throw new NotFoundException('Restaurant introuvable');
+  private generateRandomPassword(length: number): string {
+    const chars =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
+    return Array.from({ length }, () =>
+      chars.charAt(Math.floor(Math.random() * chars.length)),
+    ).join('');
+  }
 
-    // Vérifie que le hostname n'existe pas déjà
+  async addCustomDomain(restaurantId: string, dto: CreateCustomDomainDto) {
     const existing = await this.prisma.customDomain.findUnique({
       where: { hostname: dto.hostname.toLowerCase() },
     });
     if (existing) throw new BadRequestException('Domaine déjà utilisé');
 
-    // Création du custom domain
     return this.prisma.customDomain.create({
       data: {
         hostname: dto.hostname.toLowerCase(),
@@ -252,37 +205,13 @@ export class RestaurantsService {
     });
   }
 
-  // supprimer un domaine
-  async removeCustomDomain(domainId: string, superAdminId: string) {
-    const superAdmin = await this.prisma.user.findUnique({
-      where: { id: superAdminId },
-    });
-    if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
-      throw new UnauthorizedException(
-        'Seul un SUPER_ADMIN peut supprimer un domaine',
-      );
+  async removeCustomDomain(domainId: string) {
+    try {
+      return await this.prisma.customDomain.delete({
+        where: { id: domainId },
+      });
+    } catch (e) {
+      throw new NotFoundException('Domaine introuvable');
     }
-
-    const domain = await this.prisma.customDomain.findUnique({
-      where: { id: domainId },
-    });
-    if (!domain) throw new NotFoundException('Domaine introuvable');
-
-    return this.prisma.customDomain.delete({
-      where: { id: domainId },
-    });
-  }
-
-  // ────────────────────────────────────────────────
-  // Génération mot de passe aléatoire
-  // ────────────────────────────────────────────────
-  private generateRandomPassword(length: number): string {
-    const chars =
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
   }
 }

@@ -7,44 +7,36 @@ import { GetUser } from '../common/get-user.decorator';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { TenantService } from '../common/services/tenant.service';
 
-@ApiTags('RA - Mon Restaurant')
+@ApiTags('RESTO_ADMIN - Mon Restaurant')
 @ApiBearerAuth('access-token')
 @Roles(Role.RESTO_ADMIN)
 @Controller('resto-admin/my-restaurant')
 export class RestoAdminRestaurantsController {
-  constructor(
-    private readonly restaurantsService: RestaurantsService,
-    private readonly tenantService: TenantService,
-  ) {}
+  constructor(private readonly restaurantsService: RestaurantsService) {}
 
   @Get()
   @ApiOperation({ summary: 'Récupérer les informations de ma propre enseigne' })
-  async getMyInfo(@GetUser('id') userId: string, @Req() req) {
-    const host = req.headers.host;
-    const tenantId = await this.tenantService.resolveTenant(host);
-    return this.restaurantsService.getByOwner(userId, tenantId || undefined);
+  async getMyInfo(
+    @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
+  ) {
+    // On utilise getById qui est maintenant sécurisé par RLS
+    return this.restaurantsService.getById(restaurantId, role, restaurantId);
   }
 
   @Put()
-  @ApiOperation({ summary: 'Mettre à jour mes infos (couleurs, nom, etc.)' })
+  @ApiOperation({ summary: 'Mettre à jour mes infos' })
   async update(
-    @GetUser('id') userId: string,
+    @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
     @Body() dto: UpdateRestaurantDto,
-    @Req() req,
   ) {
-    const host = req.headers.host;
-    const tenantId = await this.tenantService.resolveTenant(host);
-    // On récupère d'abord le resto de l'user pour avoir son ID
-    const myResto = await this.restaurantsService.getByOwner(
-      userId,
-      tenantId || undefined,
-    );
+    // Pas besoin de chercher le resto avant, la RLS d'update() s'occupe de la sécurité
     return this.restaurantsService.update(
-      myResto[0].id,
+      restaurantId,
       dto,
-      Role.RESTO_ADMIN,
-      userId,
-      tenantId || undefined,
+      role,
+      restaurantId,
     );
   }
 }

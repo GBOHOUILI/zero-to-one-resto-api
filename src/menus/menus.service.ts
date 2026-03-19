@@ -2,22 +2,30 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class MenusService {
   constructor(private prisma: PrismaService) {}
 
+  // Utilitaire pour obtenir le client injectant le tenantId dans Postgres
+  private db(restaurantId: string) {
+    return this.prisma.withTenant(restaurantId);
+  }
+
+  /**
+   * REQUÊTES PUBLIQUES
+   */
   async getPublicMenu(restaurantId: string) {
-    const menu = await this.prisma.menuCategory.findMany({
-      where: { restaurant_id: restaurantId },
+    const menu = await this.db(restaurantId).menuCategory.findMany({
       orderBy: { position: 'asc' },
       include: {
         menu_items: {
-          // CORRECTION : 'available' au lieu de 'is_available'
           where: { available: true },
           orderBy: { position: 'asc' },
         },
@@ -30,138 +38,73 @@ export class MenusService {
   }
 
   /**
-   * Récupère toutes les catégories du restaurant de l’utilisateur
+   * GESTION DES CATÉGORIES (ADMIN)
    */
-  async getCategories(userId: string, role: string) {
-    // Note: Utilise Role.SUPER_ADMIN si tu as importé l'Enum
-    if (role === 'SUPER_ADMIN') {
-      return this.prisma.menuCategory.findMany({
-        include: { menu_items: true },
-        orderBy: { position: 'asc' },
-      });
-    }
-
-    const profile = await this.prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { restaurantId: true },
-    });
-
-    if (!profile?.restaurantId) {
-      throw new ForbiddenException('Aucun restaurant associé à votre compte');
-    }
-
-    return this.prisma.menuCategory.findMany({
-      where: { restaurant_id: profile.restaurantId },
+  async getCategories(restaurantId: string) {
+    // La RLS filtre déjà par restaurant_id, on récupère tout ce qui est visible
+    return this.db(restaurantId).menuCategory.findMany({
       include: { menu_items: true },
       orderBy: { position: 'asc' },
     });
   }
 
-  /**
-   * Crée une nouvelle catégorie pour le restaurant de l’utilisateur
-   */
-  async createCategory(
-    userId: string,
-    role: string,
-    dto: CreateMenuCategoryDto,
-  ) {
-    const profile = await this.prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { restaurantId: true },
-    });
-
-    if (!profile?.restaurantId) {
-      throw new ForbiddenException('Aucun restaurant associé à votre compte');
-    }
-
-    return this.prisma.menuCategory.create({
+  async createCategory(restaurantId: string, dto: CreateMenuCategoryDto) {
+    return this.db(restaurantId).menuCategory.create({
       data: {
         ...dto,
-        restaurant_id: profile.restaurantId,
+        restaurant_id: restaurantId,
       },
     });
   }
 
-  /**
-   * Met à jour une catégorie existante (vérification ownership)
-   */
   async updateCategory(
     id: string,
-    userId: string,
-    role: string,
+    restaurantId: string,
     dto: UpdateMenuCategoryDto,
   ) {
-    const category = await this.prisma.menuCategory.findUnique({
-      where: { id },
-      select: { restaurant_id: true },
-    });
-
-    if (!category) throw new NotFoundException('Catégorie non trouvée');
-
-    if (role === 'resto_admin') {
-      const profile = await this.prisma.profile.findUnique({
-        where: { user_id: userId },
-        select: { restaurantId: true },
+    try {
+      return await this.db(restaurantId).menuCategory.update({
+        where: { id },
+        data: dto,
       });
-      if (profile?.restaurantId !== category.restaurant_id) {
-        throw new ForbiddenException(
-          'Vous ne pouvez modifier que votre propre restaurant',
-        );
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Catégorie introuvable ou accès refusé');
       }
+      throw new InternalServerErrorException('Erreur lors de la mise à jour');
     }
+  }
 
-    return this.prisma.menuCategory.update({
-      where: { id },
-      data: dto,
-    });
+  async deleteCategory(id: string, restaurantId: string) {
+    try {
+      return await this.db(restaurantId).menuCategory.delete({
+        where: { id },
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Catégorie introuvable ou accès refusé');
+      }
+      throw new InternalServerErrorException('Erreur lors de la suppression');
+    }
   }
 
   /**
-   * Supprime une catégorie (et cascade sur items si configuré dans schema)
+   * GESTION DES ITEMS (PLATS)
    */
-  async deleteCategory(id: string, userId: string, role: string) {
-    const category = await this.prisma.menuCategory.findUnique({
-      where: { id },
-      select: { restaurant_id: true },
-    });
-
-    if (!category) throw new NotFoundException('Catégorie non trouvée');
-
-    if (role === 'RESTO_ADMIN') {
-      const profile = await this.prisma.profile.findUnique({
-        where: { user_id: userId },
-        select: { restaurantId: true },
-      });
-      if (profile?.restaurantId !== category.restaurant_id) {
-        throw new ForbiddenException(
-          'Vous ne pouvez supprimer que votre propre catégorie',
-        );
-      }
-    }
-
-    return this.prisma.menuCategory.delete({ where: { id } });
-  }
-
-  /**
-   * Crée un plat (MenuItem) dans une catégorie
-   */
-  async createItem(userId: string, dto: any) {
-    const profile = await this.prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { restaurantId: true },
-    });
-
-    if (!profile?.restaurantId) {
-      throw new ForbiddenException('Aucun restaurant associé');
-    }
-
-    return this.prisma.menuItem.create({
+  async createItem(restaurantId: string, dto: any) {
+    return this.db(restaurantId).menuItem.create({
       data: {
         name: dto.name,
         price: dto.price,
         available: dto.available ?? true,
-        category_type: dto.category_type || 'FOOD', // Champ obligatoire dans ton schéma
-        restaurant_id: profile.restaurantId,
+        category_type: dto.category_type || 'FOOD',
+        restaurant_id: restaurantId,
         category_id: dto.category_id,
         position: dto.position || 0,
         short_description: dto.short_description,
@@ -169,13 +112,46 @@ export class MenusService {
     });
   }
 
-  /**
-   * Liste tous les plats d'une catégorie pour l'admin
-   */
-  async getItemsByCategory(categoryId: string) {
-    return this.prisma.menuItem.findMany({
+  async getItemsByCategory(restaurantId: string, categoryId: string) {
+    // On sécurise même la lecture par catégorie
+    return this.db(restaurantId).menuItem.findMany({
       where: { category_id: categoryId },
       orderBy: { position: 'asc' },
     });
+  }
+
+  async updateItem(id: string, restaurantId: string, dto: any) {
+    try {
+      return await this.db(restaurantId).menuItem.update({
+        where: { id },
+        data: dto,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Plat introuvable ou accès refusé');
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la mise à jour du plat',
+      );
+    }
+  }
+
+  async deleteItem(id: string, restaurantId: string) {
+    try {
+      return await this.db(restaurantId).menuItem.delete({
+        where: { id },
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Plat introuvable ou accès refusé');
+      }
+      throw new InternalServerErrorException('Erreur lors de la suppression');
+    }
   }
 }

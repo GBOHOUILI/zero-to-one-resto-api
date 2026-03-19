@@ -26,50 +26,47 @@ export class RestoAdminMenusController {
   @Get('categories')
   @ApiOperation({ summary: 'Lister mes catégories de menu' })
   async getCategories(
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
+    @GetUser('restaurantId') restaurantId: string, // On récupère directement le resto lié au user
   ) {
-    return this.menusService.getCategories(userId, role);
+    // Le service n'attend plus que 1 argument : restaurantId
+    return this.menusService.getCategories(restaurantId);
   }
 
   @Post('categories')
   @ApiOperation({ summary: 'Créer une nouvelle catégorie (ex: Entrées)' })
   async createCategory(
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
+    @GetUser('restaurantId') restaurantId: string,
     @Body() dto: CreateMenuCategoryDto,
   ) {
-    return this.menusService.createCategory(userId, role, dto);
+    // Le service attend 2 arguments : restaurantId, dto
+    return this.menusService.createCategory(restaurantId, dto);
   }
 
   @Put('categories/:id')
   @ApiOperation({ summary: 'Modifier une catégorie existante' })
   async updateCategory(
     @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
+    @GetUser('restaurantId') restaurantId: string,
     @Body() dto: UpdateMenuCategoryDto,
   ) {
-    return this.menusService.updateCategory(id, userId, role, dto);
+    return this.menusService.updateCategory(id, restaurantId, dto);
   }
 
   @Delete('categories/:id')
   @ApiOperation({ summary: 'Supprimer une catégorie et ses plats associés' })
   async deleteCategory(
     @Param('id') id: string,
-    @GetUser('id') userId: string,
-    @GetUser('role') role: Role,
+    @GetUser('restaurantId') restaurantId: string,
   ) {
-    return this.menusService.deleteCategory(id, userId, role);
+    return this.menusService.deleteCategory(id, restaurantId);
   }
 
-  // Exemple à ajouter dans ton contrôleur
   @Post('items')
   @ApiOperation({ summary: 'Ajouter un plat à une catégorie' })
   async createItem(
-    @GetUser('id') userId: string,
+    @GetUser('restaurantId') restaurantId: string,
     @Body() dto: CreateMenuItemDto,
   ) {
-    return this.menusService.createItem(userId, dto);
+    return this.menusService.createItem(restaurantId, dto);
   }
 }

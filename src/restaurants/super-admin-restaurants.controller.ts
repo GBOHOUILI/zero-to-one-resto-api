@@ -17,7 +17,7 @@ import { GetUser } from '../common/get-user.decorator';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 
-@ApiTags('SA - Gestion des Restaurants')
+@ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
 @Roles(Role.SUPER_ADMIN)
 @Controller('super-admin/restaurants')
@@ -37,31 +37,22 @@ export class SuperAdminRestaurantsController {
   @Get()
   @ApiOperation({ summary: 'Lister TOUS les restaurants du système' })
   async getAll() {
-    return this.restaurantsService.getAll();
+    return this.restaurantsService.getAll(Role.SUPER_ADMIN);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Supprimer un restaurant et ses données' })
   async delete(@Param('id') id: string) {
-    return this.restaurantsService.delete(id);
+    return this.restaurantsService.delete(id, Role.SUPER_ADMIN, null);
   }
 
   @Post(':id/domains')
-  @ApiOperation({ summary: 'Ajouter un domaine personnalisé (ex: resto.bj)' })
-  async addDomain(
-    @Param('id') id: string,
-    @Body() dto: CreateCustomDomainDto,
-    @GetUser('id') adminId: string,
-  ) {
-    return this.restaurantsService.addCustomDomain(id, dto, adminId);
+  async addDomain(@Param('id') id: string, @Body() dto: CreateCustomDomainDto) {
+    return this.restaurantsService.addCustomDomain(id, dto);
   }
 
   @Delete('domains/:domainId')
-  @ApiOperation({ summary: 'Retirer un domaine personnalisé' })
-  async deleteDomain(
-    @Param('domainId') domainId: string,
-    @GetUser('id') adminId: string,
-  ) {
-    return this.restaurantsService.removeCustomDomain(domainId, adminId);
+  async deleteDomain(@Param('domainId') domainId: string) {
+    return this.restaurantsService.removeCustomDomain(domainId);
   }
 }
