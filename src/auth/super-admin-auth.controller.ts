@@ -10,7 +10,7 @@ import { RegisterResponseDto } from './dto/auth-response.dto';
 
 @ApiTags('SA - Gestion des Comptes')
 @ApiBearerAuth('access-token')
-@Roles(Role.SUPER_ADMIN)
+//  @Roles(Role.SUPER_ADMIN)
 @Controller('super-admin/accounts')
 export class SuperAdminAuthController {
   constructor(private authService: AuthService) {}
