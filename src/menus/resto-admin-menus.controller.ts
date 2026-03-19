@@ -113,4 +113,14 @@ export class RestoAdminMenusController {
       limit: limit ? Number(limit) : 20,
     });
   }
+
+  @Patch('items/:id')
+  @ApiOperation({ summary: 'Modifier un plat (nom, prix, image, etc.)' })
+  async updateItem(
+    @Param('id') id: string,
+    @GetUser('restaurantId') restaurantId: string,
+    @Body() dto: UpdateMenuItemDto,
+  ) {
+    return this.menusService.updateItem(id, restaurantId, dto);
+  }
 }

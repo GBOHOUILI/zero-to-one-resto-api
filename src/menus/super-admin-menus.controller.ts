@@ -107,4 +107,14 @@ export class SuperAdminMenusController {
       limit: limit ? Number(limit) : 20,
     });
   }
+
+  @Patch('items/:id')
+  @ApiOperation({ summary: 'Modifier un plat d’un restaurant spécifique' })
+  async updateItem(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateMenuItemDto,
+  ) {
+    return this.menusService.updateItem(id, restaurantId, dto);
+  }
 }

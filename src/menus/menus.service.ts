@@ -254,4 +254,23 @@ export class MenusService {
       },
     };
   }
+
+  async updateItem(id: string, restaurantId: string, dto: UpdateMenuItemDto) {
+    try {
+      return await this.db(restaurantId).menuItem.update({
+        where: { id },
+        data: dto,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException('Plat introuvable ou accès refusé');
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la mise à jour du plat',
+      );
+    }
+  }
 }
