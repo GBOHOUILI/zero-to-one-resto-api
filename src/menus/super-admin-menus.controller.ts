@@ -69,7 +69,7 @@ export class SuperAdminMenusController {
     return this.menusService.createItem(restaurantId, dto);
   }
 
-  @Patch(':restaurantId/categories/:id')
+  @Patch('categories/:id')
   async updateCategoryByPath(
     @Param('restaurantId') restaurantId: string,
     @Param('id') id: string,

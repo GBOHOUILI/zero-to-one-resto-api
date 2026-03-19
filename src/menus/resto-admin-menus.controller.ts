@@ -64,7 +64,9 @@ export class RestoAdminMenusController {
   }
 
   @Post('items')
-  @ApiOperation({ summary: 'Ajouter un plat à une catégorie' })
+  @ApiOperation({
+    summary: 'Ajouter un plat à une catégorie avec son image Cloudinary',
+  })
   async createItem(
     @GetUser('restaurantId') restaurantId: string,
     @Body() dto: CreateMenuItemDto,
