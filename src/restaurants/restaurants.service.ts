@@ -16,6 +16,7 @@ import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { Restaurant, Prisma } from '@prisma/client';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
+import { UpdateDesignDto } from './dto/update-design.dto';
 
 @Injectable()
 export class RestaurantsService {
@@ -311,5 +312,25 @@ export class RestaurantsService {
         restaurant_id: restaurantId,
       },
     });
+  }
+
+  async updateDesign(id: string, dto: UpdateDesignDto) {
+    try {
+      return await this.prisma.restaurant.update({
+        where: { id },
+        data: dto,
+        select: {
+          primary_color: true,
+          secondary_color: true,
+          font_family: true,
+          template: true,
+          dark_mode: true,
+        },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Impossible de mettre à jour le design',
+      );
+    }
   }
 }

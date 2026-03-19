@@ -9,6 +9,7 @@ import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { TenantService } from '../common/services/tenant.service';
+import { UpdateDesignDto } from './dto/update-design.dto';
 
 @ApiTags('RESTO_ADMIN - Mon Restaurant')
 @ApiBearerAuth('access-token')
@@ -89,5 +90,16 @@ export class RestoAdminRestaurantsController {
     @Body() dto: UpdateSocialLinksDto,
   ) {
     return this.restaurantsService.updateSocialLinks(restaurantId, dto, role);
+  }
+
+  @Patch('design')
+  @ApiOperation({
+    summary: 'Modifier l’apparence du restaurant (Couleurs, Typo, Template)',
+  })
+  async updateDesign(
+    @GetUser('restaurantId') restaurantId: string,
+    @Body() dto: UpdateDesignDto,
+  ) {
+    return this.restaurantsService.updateDesign(restaurantId, dto);
   }
 }

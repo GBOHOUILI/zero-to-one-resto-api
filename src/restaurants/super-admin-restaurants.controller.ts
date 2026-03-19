@@ -21,6 +21,7 @@ import { CreateCustomDomainDto } from './dto/create-custom-domain.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
+import { UpdateDesignDto } from './dto/update-design.dto';
 
 @ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
@@ -94,5 +95,13 @@ export class SuperAdminRestaurantsController {
     @Body() dto: UpdateSocialLinksDto,
   ) {
     return this.restaurantsService.updateSocialLinks(id, dto, Role.SUPER_ADMIN);
+  }
+
+  @Patch(':id/design')
+  @ApiOperation({
+    summary: 'Modifier le design d’un restaurant spécifique (Super Admin)',
+  })
+  async updateDesign(@Param('id') id: string, @Body() dto: UpdateDesignDto) {
+    return this.restaurantsService.updateDesign(id, dto);
   }
 }
