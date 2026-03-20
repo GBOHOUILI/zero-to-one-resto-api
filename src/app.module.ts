@@ -16,6 +16,8 @@ import { TestimonialsModule } from './testimonials/testimonials.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { TeamModule } from './team/team.module';
 
+import { ScheduleModule } from '@nestjs/schedule';
+
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -31,6 +33,7 @@ import { RolesGuard } from './auth/roles.guard';
     TestimonialsModule,
     AnalyticsModule,
     TeamModule,
+    ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [
