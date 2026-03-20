@@ -1,11 +1,18 @@
-import { Controller, Get, Param, Delete, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Delete,
+  Body,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { TestimonialsService } from './testimonials.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
-import { CreateTestimonialDto } from './dto/create-testimonial.dto';
 
 @ApiTags('Super Admin - Testimonials')
 @Controller('super-admin/restaurants/:restaurantId/testimonials')
@@ -17,6 +24,15 @@ export class SuperAdminTestimonialsController {
   @Get()
   findAll(@Param('restaurantId') resId: string) {
     return this.testimonialsService.findAllAdmin(resId);
+  }
+
+  @Patch(':id/visibility')
+  toggleVisibility(
+    @Param('restaurantId') resId: string,
+    @Param('id') id: string,
+    @Body('visible') visible: boolean,
+  ) {
+    return this.testimonialsService.toggleVisibility(id, resId, visible);
   }
 
   @Delete(':id')
