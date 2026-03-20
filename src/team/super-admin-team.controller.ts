@@ -2,13 +2,20 @@ import {
   Controller,
   Get,
   Post,
-  Put,
-  Query,
-  Patch,
-  Delete,
   Body,
+  Patch,
   Param,
+  Delete,
+  UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { TeamService } from './team.service';
+import { CreateTeamMemberDto } from './dto/create-team-member.dto';
+import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Role } from '../auth/role.enum';
 
 @Controller('super-admin/restaurants/:restaurantId/team')
 @UseGuards(JwtAuthGuard, RolesGuard)
