@@ -26,4 +26,12 @@ export class SuperAdminAnalyticsController {
   getGlobalOverview() {
     return this.analyticsService.getGlobalOverview();
   }
+
+  @Get('restaurant/:restaurantId/dashboard')
+  @ApiOperation({
+    summary: 'Dashboard complet d’un restaurant pour le Super Admin',
+  })
+  getRestaurantDashboard(@Param('restaurantId') resId: string) {
+    return this.analyticsService.getRestoDashboard(resId);
+  }
 }

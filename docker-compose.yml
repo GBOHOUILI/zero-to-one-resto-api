@@ -1,4 +1,22 @@
 services:
+  # Ton API NestJS
+  api:
+    build: .
+    container_name: zero-to-one-api
+    restart: always
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgres://${DB_USERNAME:-postgres}:${DB_PASSWORD:-password}@postgres:5432/${DB_DATABASE:-zero_to_one}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - zero-to-one-network
+
   # Base de données PostgreSQL
   postgres:
     image: postgres:16-alpine
@@ -12,16 +30,20 @@ services:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - zero-to-one-network
 
-  # Cache Redis pour le TenantService
+  # Cache Redis
   redis:
     image: redis:7-alpine
     container_name: zero-to-one-redis
     restart: always
     ports:
       - '6379:6379'
+    networks:
+      - zero-to-one-network
 
-  # Interface pour visualiser Redis (Optionnel mais génial en dev)
+  # Interface RedisInsight
   redis-insight:
     image: redislabs/redisinsight:latest
     container_name: zero-to-one-redis-ui
@@ -29,6 +51,12 @@ services:
       - '8001:8001'
     depends_on:
       - redis
+    networks:
+      - zero-to-one-network
+
+networks:
+  zero-to-one-network:
+    driver: bridge
 
 volumes:
   postgres_data:

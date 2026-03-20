@@ -19,4 +19,10 @@ export class RestoAdminAnalyticsController {
   getMyStats(@GetUser('restaurantId') resId: string) {
     return this.analyticsService.getStats(resId);
   }
+
+  @Get('dashboard')
+  @ApiOperation({ summary: 'Stats complètes : Visites, WhatsApp et Top Plats' })
+  getDashboard(@GetUser('restaurantId') resId: string) {
+    return this.analyticsService.getRestoDashboard(resId);
+  }
 }

@@ -72,4 +72,66 @@ export class AnalyticsService {
       views: stat._count._all,
     }));
   }
+
+  async trackItemView(
+    restaurantId: string,
+    itemId: string,
+    metadata: { ip: string; userAgent: string },
+  ) {
+    return await this.prisma.analyticsEvent.create({
+      data: {
+        restaurant_id: restaurantId,
+        event_type: 'ITEM_VIEW',
+        page: `item:${itemId}`,
+        ip: metadata.ip,
+        user_agent: metadata.userAgent,
+      },
+    });
+  }
+
+  async getRestoDashboard(restaurantId: string) {
+    const events = await this.prisma.analyticsEvent.findMany({
+      where: { restaurant_id: restaurantId },
+    });
+
+    const totalViews = events.filter((e) => e.event_type === 'VIEW').length;
+    const whatsappClicks = events.filter(
+      (e) => e.event_type === 'WHATSAPP_CLICK',
+    ).length;
+
+    // Calcul Top Plats
+    const itemViews = events.filter((e) => e.event_type === 'ITEM_VIEW');
+    const itemCounts: Record<string, number> = {};
+
+    itemViews.forEach((ev) => {
+      const id = ev.page?.split(':')[1];
+      if (id) itemCounts[id] = (itemCounts[id] || 0) + 1;
+    });
+
+    const topItemIds = Object.keys(itemCounts)
+      .sort((a, b) => itemCounts[b] - itemCounts[a])
+      .slice(0, 5);
+
+    const topItems = await this.prisma.menuItem.findMany({
+      where: { id: { in: topItemIds } },
+      select: { id: true, name: true, price: true },
+    });
+
+    return {
+      summary: {
+        totalViews,
+        whatsappClicks,
+        conversionRate:
+          totalViews > 0
+            ? ((whatsappClicks / totalViews) * 100).toFixed(2) + '%'
+            : '0%',
+      },
+      topItems: topItems
+        .map((item) => ({
+          ...item,
+          views: itemCounts[item.id],
+        }))
+        .sort((a, b) => b.views - a.views),
+    };
+  }
 }

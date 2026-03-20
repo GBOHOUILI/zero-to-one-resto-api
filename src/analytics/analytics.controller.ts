@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req } from '@nestjs/common';
+import { Controller, Post, Body, Param, Req } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { TrackEventDto } from './dto/track-event.dto';
 import { Request } from 'express';
@@ -26,5 +26,19 @@ export class AnalyticsController {
     const userAgent = (req.headers['user-agent'] as string) || 'unknown';
 
     return this.analyticsService.track(dto, 'WHATSAPP_CLICK', ip, userAgent);
+  }
+
+  @Post('item-view/:itemId')
+  @ApiOperation({ summary: 'Tracker la consultation d’un plat' })
+  trackItemView(
+    @Param('itemId') itemId: string,
+    @Body('restaurant_id') resId: string,
+    @Req() req: Request,
+  ) {
+    const metadata = {
+      ip: req.ip || '0.0.0.0',
+      userAgent: (req.headers['user-agent'] as string) || 'unknown',
+    };
+    return this.analyticsService.trackItemView(resId, itemId, metadata);
   }
 }
