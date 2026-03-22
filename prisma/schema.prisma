@@ -72,6 +72,8 @@ model Restaurant {
   social_links       SocialLink?
   subscriptions      Subscription?
   testimonials       Testimonial[]
+  support_tickets SupportTicket[]
+  report Report[]
 }
 
 model Contact {
@@ -288,4 +290,47 @@ model TeamMember {
   created_at    DateTime   @default(now())
   updated_at    DateTime   @updatedAt
   restaurant    Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+}
+
+model SupportTicket {
+  id            String           @id @default(uuid())
+  subject       String
+  status        String           @default("OPEN")
+  priority      String           @default("MEDIUM")
+  restaurant_id String
+  restaurant    Restaurant       @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  messages      SupportMessage[]
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+}
+
+model SupportMessage {
+  id          String        @id @default(uuid())
+  ticket_id   String
+  sender_id   String        // ID de l'utilisateur (Admin Resto ou Super Admin)
+  content     String        @db.Text
+  is_admin    Boolean       @default(false) // True si c'est le Super Admin qui répond
+  created_at  DateTime      @default(now())
+  ticket      SupportTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id              String     @id @default(uuid())
+  type            String     // BUG, CONTENT, PAYMENT, OTHER
+  priority        String     @default("LOW") // LOW, MEDIUM, HIGH, CRITICAL
+  description     String     @db.Text
+  page_url        String?    // L'URL où le problème est survenu
+  status          String     @default("PENDING") // PENDING, INVESTIGATING, FIXED, REJECTED
+
+  // Relations
+  restaurant_id   String
+  restaurant      Restaurant @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+
+  reporter_id     String     // ID de l'utilisateur qui signale
+
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([type])
 }

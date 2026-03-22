@@ -16,6 +16,7 @@ import { TestimonialsModule } from './testimonials/testimonials.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { TeamModule } from './team/team.module';
 import { PaymentsModule } from './payments/payments.module';
+import { SupportModule } from './support/support.module';
 
 import { ScheduleModule } from '@nestjs/schedule';
 
@@ -36,6 +37,7 @@ import { RolesGuard } from './auth/roles.guard';
     TeamModule,
     ScheduleModule.forRoot(),
     PaymentsModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [
