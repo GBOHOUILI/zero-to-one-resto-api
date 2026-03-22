@@ -1,7 +1,7 @@
 import { Controller, Get, Req, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MenusService } from './menus.service';
-import { TenantService } from '../common/services/tenant.service';
+import { TenantService } from '../tenants/tenant.service';
 import { Public } from '../auth/public.decorator';
 
 @ApiTags('Client - Menu Digital')

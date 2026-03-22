@@ -19,12 +19,16 @@ import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { UpdateDesignDto } from './dto/update-design.dto';
 import { UpdatePageConfigDto } from './dto/update-page-config.dto';
 import { RestaurantQueryDto } from './dto/restaurant-query.dto';
+import { RedisService } from '../common/redis/redis.service';
+import { DomainValidationService } from '../tenants/domain-validation.service';
 
 @Injectable()
 export class RestaurantsService {
   constructor(
     private prisma: PrismaService,
     private mailService: MailService,
+    private redis: RedisService,
+    private domainValidator: DomainValidationService,
   ) {}
 
   // Utilitaire pour le client RLS
@@ -275,18 +279,36 @@ export class RestaurantsService {
   }
 
   async addCustomDomain(restaurantId: string, dto: CreateCustomDomainDto) {
-    const existing = await this.prisma.customDomain.findUnique({
-      where: { hostname: dto.hostname.toLowerCase() },
-    });
-    if (existing) throw new BadRequestException('Domaine déjà utilisé');
+    const hostname = dto.hostname.toLowerCase().trim();
 
-    return this.prisma.customDomain.create({
+    // 1. Vérification DNS
+    const isValid = await this.domainValidator.validateConfig(hostname);
+    if (!isValid) {
+      throw new BadRequestException(
+        `Le domaine ${hostname} ne pointe pas correctement vers nos serveurs. Vérifiez vos CNAME/A records.`,
+      );
+    }
+
+    // 2. Vérification unicité en DB
+    const existing = await this.prisma.customDomain.findUnique({
+      where: { hostname },
+    });
+    if (existing) throw new BadRequestException('Ce domaine est déjà utilisé');
+
+    // 3. Création en DB
+    const newDomain = await this.prisma.customDomain.create({
       data: {
-        hostname: dto.hostname.toLowerCase(),
+        hostname,
         isPrimary: dto.isPrimary ?? false,
         restaurantId,
       },
     });
+
+    // 4. Mapping Redis Immédiat (On gagne en réactivité)
+    const cacheKey = `tenant:${hostname}`;
+    await this.redis.set(cacheKey, restaurantId, 3600); // TTL 1h pour les domaines validés
+
+    return newDomain;
   }
 
   async removeCustomDomain(domainId: string) {

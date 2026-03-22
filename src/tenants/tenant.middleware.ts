@@ -1,7 +1,7 @@
 // src/tenants/middleware/tenant.middleware.ts
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
-import { TenantService } from '../services/tenant.service';
+import { TenantService } from './tenant.service';
 
 export interface TenantRequest extends Request {
   tenantId?: string | null;

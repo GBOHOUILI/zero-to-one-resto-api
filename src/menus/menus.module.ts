@@ -3,7 +3,7 @@ import { MenusController } from './menus.controller';
 import { RestoAdminMenusController } from './resto-admin-menus.controller';
 import { MenusService } from './menus.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TenantModule } from '../common/services/tenant.module';
+import { TenantModule } from '../tenants/tenant.module';
 
 @Module({
   imports: [TenantModule],

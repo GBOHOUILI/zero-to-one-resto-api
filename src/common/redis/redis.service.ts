@@ -1,14 +1,20 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
 
+  constructor(private configService: ConfigService) {}
+
   onModuleInit() {
+    const host = this.configService.get<string>('REDIS_HOST', 'localhost');
+    const port = this.configService.get<number>('REDIS_PORT', 6379);
+
     this.client = new Redis({
-      host: 'localhost',
-      port: 6379,
+      host,
+      port,
     });
 
     this.client.on('connect', () => {
@@ -32,6 +38,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.get(key);
   }
 
+  /**
+   * @param ttlSeconds Temps de vie en secondes
+   */
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
     if (ttlSeconds) {
       await this.client.set(key, value, 'EX', ttlSeconds);
@@ -42,5 +51,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async del(key: string): Promise<void> {
     await this.client.del(key);
+  }
+
+  getClient(): Redis {
+    return this.client;
   }
 }

@@ -9,8 +9,8 @@ import { RestaurantsModule } from './restaurants/restaurants.module';
 import { MenusModule } from './menus/menus.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { RedisModule } from './common/redis/redis.module';
-import { TenantMiddleware } from './common/middleware/tenant.middleware';
-import { TenantService } from './common/services/tenant.service';
+import { TenantMiddleware } from './tenants/tenant.middleware';
+import { TenantService } from './tenants/tenant.service';
 
 import { TestimonialsModule } from './testimonials/testimonials.module';
 import { AnalyticsModule } from './analytics/analytics.module';

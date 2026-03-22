@@ -8,7 +8,7 @@ import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
-import { TenantService } from '../common/services/tenant.service';
+import { TenantService } from '../tenants/tenant.service';
 import { UpdateDesignDto } from './dto/update-design.dto';
 import { UpdatePageConfigDto } from './dto/update-page-config.dto';
 

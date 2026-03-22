@@ -1,7 +1,7 @@
 import { Controller, Get, Req, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { RestaurantsService } from './restaurants.service';
-import { TenantService } from '../common/services/tenant.service';
+import { TenantService } from '../tenants/tenant.service';
 import { Public } from '../auth/public.decorator';
 import { Role } from '../auth/role.enum';
 import { MailService } from '../mail/mail.service';
