@@ -5,9 +5,10 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { GetUser } from '../common/get-user.decorator';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Resto Admin - Analytics')
+@ApiBearerAuth('access-token')
 @Controller('resto-admin/analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.RESTO_ADMIN)

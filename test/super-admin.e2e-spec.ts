@@ -123,6 +123,18 @@ describe('Suite E2E : Super Admin Operations', () => {
     });
   });
 
+  it('GET /super-admin/analytics/platform-stats (Dashboard Global)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/super-admin/analytics/platform-stats')
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(res.body.overview).toBeDefined();
+    expect(res.body.overview.totalRevenue).toBeGreaterThanOrEqual(15000);
+    expect(res.body.recentPayments.length).toBeGreaterThan(0);
+    expect(res.body.recentPayments[0].method).toBe('MTN_MOMO');
+  });
+
   afterAll(async () => {
     await app.close();
   });

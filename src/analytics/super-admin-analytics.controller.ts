@@ -4,9 +4,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Super Admin - Analytics')
+@ApiBearerAuth('access-token')
 @Controller('super-admin/analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.SUPER_ADMIN)
@@ -33,5 +34,14 @@ export class SuperAdminAnalyticsController {
   })
   getRestaurantDashboard(@Param('restaurantId') resId: string) {
     return this.analyticsService.getRestoDashboard(resId);
+  }
+
+  @Get('platform-stats') // C'est le "Dashboard Overview" global
+  @ApiOperation({
+    summary: 'Statistiques globales de la plateforme (Business & Usage)',
+  })
+  @Roles(Role.SUPER_ADMIN)
+  async getPlatformStats() {
+    return this.analyticsService.getPlatformGlobalStats();
   }
 }

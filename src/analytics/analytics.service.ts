@@ -134,4 +134,46 @@ export class AnalyticsService {
         .sort((a, b) => b.views - a.views),
     };
   }
+
+  async getPlatformGlobalStats() {
+    const [totalRestaurants, totalUsers, totalPayments, activeSubscriptions] =
+      await Promise.all([
+        this.prisma.restaurant.count(),
+        this.prisma.user.count(),
+        this.prisma.payment.aggregate({
+          where: { status: 'COMPLETED' },
+          _sum: { amount: true },
+        }),
+        this.prisma.subscription.count({
+          where: { status: 'ACTIVE' },
+        }),
+      ]);
+
+    // Optionnel : Récupérer les 5 derniers paiements pour le dashboard
+    const recentPayments = await this.prisma.payment.findMany({
+      take: 5,
+      orderBy: { created_at: 'desc' },
+      include: { restaurant: { select: { name: true } } },
+    });
+
+    return {
+      overview: {
+        totalRestaurants,
+        totalUsers,
+        totalRevenue: totalPayments._sum.amount || 0,
+        activeSubscriptions,
+        retentionRate:
+          totalRestaurants > 0
+            ? ((activeSubscriptions / totalRestaurants) * 100).toFixed(2) + '%'
+            : '0%',
+      },
+      recentPayments: recentPayments.map((p) => ({
+        id: p.id,
+        restaurant: p.restaurant?.name,
+        amount: p.amount,
+        date: p.created_at,
+        method: p.method,
+      })),
+    };
+  }
 }
