@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../common/redis/redis.service';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { Prisma } from '@prisma/client';
@@ -14,17 +15,38 @@ import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
 @Injectable()
 export class MenusService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
 
-  // Utilitaire pour obtenir le client injectant le tenantId dans Postgres
+  // Utilitaire pour obtenir le client injectant le tenantId dans Postgres (RLS)
   private db(restaurantId: string) {
     return this.prisma.withTenant(restaurantId);
   }
 
   /**
-   * REQUÊTES PUBLIQUES
+   * INVALIDATION DU CACHE
+   * À appeler après chaque modification de donnée (CUD)
+   */
+  private async invalidateCache(restaurantId: string) {
+    const cacheKey = `menu:public:${restaurantId}`;
+    await this.redis.del(cacheKey);
+  }
+
+  /**
+   * REQUÊTES PUBLIQUES (OPTIMISÉES PAR REDIS)
    */
   async getPublicMenu(restaurantId: string) {
+    const cacheKey = `menu:public:${restaurantId}`;
+
+    // 1. Tenter de récupérer depuis le cache Redis
+    const cachedData = await this.redis.get(cacheKey);
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+
+    // 2. Si Cache Miss, requête DB via RLS
     const menu = await this.db(restaurantId).menuCategory.findMany({
       orderBy: { position: 'asc' },
       include: {
@@ -35,8 +57,13 @@ export class MenusService {
       },
     });
 
-    if (!menu || menu.length === 0)
+    if (!menu || menu.length === 0) {
       throw new NotFoundException('Menu introuvable');
+    }
+
+    // 3. Stocker dans Redis (TTL 1 heure)
+    await this.redis.set(cacheKey, JSON.stringify(menu), 3600);
+
     return menu;
   }
 
@@ -44,7 +71,6 @@ export class MenusService {
    * GESTION DES CATÉGORIES (ADMIN)
    */
   async getCategories(restaurantId: string) {
-    // La RLS filtre déjà par restaurant_id, on récupère tout ce qui est visible
     return this.db(restaurantId).menuCategory.findMany({
       include: { menu_items: true },
       orderBy: { position: 'asc' },
@@ -54,8 +80,6 @@ export class MenusService {
   async createCategory(restaurantId: string, dto: CreateMenuCategoryDto) {
     let finalPosition = dto.position;
 
-    // Si l'utilisateur n'a pas spécifié de position (ou si c'est 0 par défaut)
-    // on peut chercher la position max actuelle pour mettre la nouvelle à la fin
     if (!dto.position) {
       const lastCategory = await this.db(restaurantId).menuCategory.findFirst({
         orderBy: { position: 'desc' },
@@ -63,13 +87,16 @@ export class MenusService {
       finalPosition = lastCategory ? lastCategory.position + 1 : 0;
     }
 
-    return this.db(restaurantId).menuCategory.create({
+    const category = await this.db(restaurantId).menuCategory.create({
       data: {
         ...dto,
         position: finalPosition,
         restaurant_id: restaurantId,
       },
     });
+
+    await this.invalidateCache(restaurantId);
+    return category;
   }
 
   async updateCategory(
@@ -78,49 +105,54 @@ export class MenusService {
     dto: UpdateMenuCategoryDto,
   ) {
     try {
-      return await this.db(restaurantId).menuCategory.update({
+      const category = await this.db(restaurantId).menuCategory.update({
         where: { id },
         data: dto,
       });
+      await this.invalidateCache(restaurantId);
+      return category;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2025'
       ) {
-        throw new NotFoundException('Catégorie introuvable ou accès refusé');
+        throw new NotFoundException('Catégorie introuvable');
       }
       throw new InternalServerErrorException('Erreur lors de la mise à jour');
     }
   }
 
   async deleteCategory(id: string, restaurantId: string) {
-    // 1. Vérifier si la catégorie contient des plats
     const category = await this.db(restaurantId).menuCategory.findUnique({
       where: { id },
       include: { _count: { select: { menu_items: true } } },
     });
 
     if (!category) throw new NotFoundException('Catégorie introuvable');
-
     if (category._count.menu_items > 0) {
       throw new ForbiddenException(
-        'Impossible de supprimer une catégorie qui contient encore des plats. Videz-la d’abord.',
+        'Impossible de supprimer une catégorie non vide.',
       );
     }
 
-    try {
-      return await this.db(restaurantId).menuCategory.delete({
-        where: { id },
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2025'
-      ) {
-        throw new NotFoundException('Catégorie introuvable ou accès refusé');
-      }
-      throw new InternalServerErrorException('Erreur lors de la suppression');
-    }
+    const deleted = await this.db(restaurantId).menuCategory.delete({
+      where: { id },
+    });
+    await this.invalidateCache(restaurantId);
+    return deleted;
+  }
+
+  async reorderCategories(restaurantId: string, dto: ReorderCategoriesDto) {
+    const result = await this.prisma.$transaction(
+      dto.categories.map((cat) =>
+        this.db(restaurantId).menuCategory.update({
+          where: { id: cat.id },
+          data: { position: cat.position },
+        }),
+      ),
+    );
+    await this.invalidateCache(restaurantId);
+    return result;
   }
 
   /**
@@ -131,12 +163,9 @@ export class MenusService {
       where: { id: dto.category_id },
     });
 
-    if (!category) {
-      throw new NotFoundException('Catégorie introuvable pour ce restaurant');
-    }
+    if (!category) throw new NotFoundException('Catégorie introuvable');
 
     let finalPosition = dto.position;
-
     if (dto.position === undefined || dto.position === null) {
       const lastItem = await this.db(restaurantId).menuItem.findFirst({
         where: { category_id: dto.category_id },
@@ -145,41 +174,64 @@ export class MenusService {
       finalPosition = lastItem ? lastItem.position + 1 : 0;
     }
 
-    return this.db(restaurantId).menuItem.create({
+    const item = await this.db(restaurantId).menuItem.create({
       data: {
-        name: dto.name,
-        short_description: dto.short_description,
-        price: dto.price,
-        image_url: dto.image_url,
-        available: dto.available ?? true,
-        category_id: dto.category_id,
+        ...dto,
         restaurant_id: restaurantId,
         position: finalPosition,
-        category_type: dto.category_type,
       },
     });
+
+    await this.invalidateCache(restaurantId);
+    return item;
   }
 
-  async getItemsByCategory(restaurantId: string, categoryId: string) {
-    // On sécurise même la lecture par catégorie
-    return this.db(restaurantId).menuItem.findMany({
-      where: { category_id: categoryId },
-      orderBy: { position: 'asc' },
+  async updateItem(id: string, restaurantId: string, dto: UpdateMenuItemDto) {
+    try {
+      const item = await this.db(restaurantId).menuItem.update({
+        where: { id },
+        data: dto,
+      });
+      await this.invalidateCache(restaurantId);
+      return item;
+    } catch (e) {
+      throw new InternalServerErrorException('Erreur de mise à jour du plat');
+    }
+  }
+
+  async deleteItem(id: string, restaurantId: string) {
+    const item = await this.db(restaurantId).menuItem.findUnique({
+      where: { id },
     });
+    if (!item) throw new NotFoundException('Plat introuvable');
+
+    const deleted = await this.db(restaurantId).menuItem.delete({
+      where: { id },
+    });
+    await this.invalidateCache(restaurantId);
+    return deleted;
   }
 
-  async reorderCategories(restaurantId: string, dto: ReorderCategoriesDto) {
-    // On utilise une transaction pour l'atomicité
-    return this.prisma.$transaction(
-      dto.categories.map((cat) =>
-        this.db(restaurantId).menuCategory.update({
-          where: { id: cat.id },
-          data: { position: cat.position },
-        }),
-      ),
-    );
+  async toggleItemAvailability(
+    id: string,
+    restaurantId: string,
+    available: boolean,
+  ) {
+    try {
+      const updated = await this.db(restaurantId).menuItem.update({
+        where: { id },
+        data: { available },
+      });
+      await this.invalidateCache(restaurantId);
+      return updated;
+    } catch (e) {
+      throw new NotFoundException('Plat introuvable');
+    }
   }
 
+  /**
+   * LECTURE FILTRÉE (ADMIN)
+   */
   async getItems(
     restaurantId: string,
     filters: {
@@ -192,11 +244,7 @@ export class MenusService {
     const { categoryId, available, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
-    // Construction dynamique du "where"
-    const where: Prisma.MenuItemWhereInput = {
-      restaurant_id: restaurantId,
-    };
-
+    const where: Prisma.MenuItemWhereInput = { restaurant_id: restaurantId };
     if (categoryId) where.category_id = categoryId;
     if (available !== undefined) where.available = available;
 
@@ -213,74 +261,7 @@ export class MenusService {
 
     return {
       data: items,
-      meta: {
-        total,
-        page,
-        lastPage: Math.ceil(total / limit),
-      },
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
     };
-  }
-
-  async updateItem(id: string, restaurantId: string, dto: UpdateMenuItemDto) {
-    // Logique de remplacement d'image
-    if (dto.image_url) {
-      const currentItem = await this.db(restaurantId).menuItem.findUnique({
-        where: { id },
-        select: { image_url: true },
-      });
-
-      if (currentItem?.image_url && currentItem.image_url !== dto.image_url) {
-        // TODO: Appeler ton UploadService pour supprimer l'ancienne image Cloudinary
-        console.log('Ancienne image à supprimer:', currentItem.image_url);
-      }
-    }
-
-    try {
-      return await this.db(restaurantId).menuItem.update({
-        where: { id },
-        data: dto,
-      });
-    } catch (e) {
-      throw new InternalServerErrorException('Erreur de mise à jour du plat');
-    }
-  }
-
-  async deleteItem(id: string, restaurantId: string) {
-    const item = await this.db(restaurantId).menuItem.findUnique({
-      where: { id },
-      select: { image_url: true },
-    });
-
-    if (!item) throw new NotFoundException('Plat introuvable');
-
-    if (item.image_url) {
-      // TODO: Appeler ton UploadService pour supprimer l'image Cloudinary
-      console.log('Image Cloudinary à supprimer:', item.image_url);
-    }
-
-    return await this.db(restaurantId).menuItem.delete({ where: { id } });
-  }
-
-  async toggleItemAvailability(
-    id: string,
-    restaurantId: string,
-    available: boolean,
-  ) {
-    try {
-      return await this.db(restaurantId).menuItem.update({
-        where: { id },
-        data: { available },
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2025'
-      ) {
-        throw new NotFoundException('Plat introuvable');
-      }
-      throw new InternalServerErrorException(
-        'Erreur lors du changement de disponibilité',
-      );
-    }
   }
 }
