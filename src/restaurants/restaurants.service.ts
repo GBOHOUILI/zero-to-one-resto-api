@@ -118,6 +118,9 @@ export class RestaurantsService {
   // ────────────────────────────────────────────────
   // Création : Action "God Mode" (bypass RLS car nouvelle entrée)
   // ────────────────────────────────────────────────
+  // ────────────────────────────────────────────────
+  // Création : Action "God Mode" (bypass RLS car nouvelle entrée)
+  // ────────────────────────────────────────────────
   async createRestaurant(
     superAdminId: string,
     dto: CreateRestaurantDto,
@@ -136,7 +139,12 @@ export class RestaurantsService {
     });
     if (existing) throw new BadRequestException('Cet email est déjà utilisé');
 
-    const password = this.generateRandomPassword(12);
+    // Dans la méthode createRestaurant
+    const password =
+      process.env.NODE_ENV === 'test'
+        ? 'DefaultPass123'
+        : this.generateRandomPassword(12);
+
     const hashed = await bcrypt.hash(password, 10);
 
     return this.prisma
@@ -175,10 +183,9 @@ export class RestaurantsService {
         return restaurant;
       })
       .then(async (res) => {
-        await this.mailService.sendRestaurantCreationEmails(
-          superAdmin.email,
+        await this.mailService.sendWelcomeEmail(
           dto.adminEmail,
-          res,
+          res.name,
           password,
         );
         return res;
