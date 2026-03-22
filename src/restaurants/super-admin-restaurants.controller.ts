@@ -5,6 +5,7 @@ import {
   Patch,
   Put,
   Delete,
+  Query,
   Body,
   Param,
   Req,
@@ -13,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { RestaurantsService } from './restaurants.service';
+import { AuthService } from '../auth/auth.service';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { GetUser } from '../common/get-user.decorator';
@@ -23,13 +25,17 @@ import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { UpdateDesignDto } from './dto/update-design.dto';
 import { UpdatePageConfigDto } from './dto/update-page-config.dto';
+import { RestaurantQueryDto } from './dto/restaurant-query.dto';
 
 @ApiTags('SUPER_ADMIN - Gestion des Restaurants')
 @ApiBearerAuth('access-token')
 @Roles(Role.SUPER_ADMIN)
 @Controller('super-admin/restaurants')
 export class SuperAdminRestaurantsController {
-  constructor(private readonly restaurantsService: RestaurantsService) {}
+  constructor(
+    private readonly restaurantsService: RestaurantsService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -42,9 +48,11 @@ export class SuperAdminRestaurantsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Lister TOUS les restaurants du système' })
-  async getAll() {
-    return this.restaurantsService.getAll(Role.SUPER_ADMIN);
+  @ApiOperation({
+    summary: 'Lister les restaurants avec filtres, recherche et pagination',
+  })
+  async getAll(@Query() query: RestaurantQueryDto) {
+    return this.restaurantsService.getAllAdmin(query);
   }
 
   @Delete(':slug')
@@ -126,5 +134,39 @@ export class SuperAdminRestaurantsController {
     @Body() dto: UpdatePageConfigDto,
   ) {
     return this.restaurantsService.updatePageConfig(id, slug, dto);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Voir tous les détails d’un restaurant par son ID' })
+  async getDetails(@Param('id') id: string) {
+    // Utilise getById existant en mode SUPER_ADMIN
+    return this.restaurantsService.getById(id, Role.SUPER_ADMIN);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({
+    summary: 'Changer le statut (suspendre/activer) d’un restaurant',
+  })
+  async changeStatus(
+    @Param('id') id: string,
+    @Body('status') status: 'active' | 'suspended',
+  ) {
+    return this.restaurantsService.updateStatus(id, status);
+  }
+
+  @Delete(':id/hard-delete')
+  @ApiOperation({ summary: 'Suppression TOTALE (cascade) par ID' })
+  async hardDelete(@Param('id') id: string) {
+    return this.restaurantsService.hardDelete(id);
+  }
+
+  @Post(':id/reset-password')
+  @ApiOperation({
+    summary: 'Envoyer un email de reset password à l’admin du resto',
+  })
+  async resetAdminPassword(@Param('id') id: string) {
+    const email = await this.restaurantsService.triggerAdminResetPassword(id);
+
+    return this.authService.forgotPassword(email);
   }
 }

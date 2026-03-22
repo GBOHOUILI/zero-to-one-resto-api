@@ -1,5 +1,5 @@
 // src/mail/mail.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
@@ -60,7 +60,8 @@ Changez votre mot de passe dès que possible !
     }
   }
   async sendResetPasswordEmail(email: string, token: string) {
-    const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
 
     try {
       await this.transporter.sendMail({
@@ -68,16 +69,23 @@ Changez votre mot de passe dès que possible !
         to: email,
         subject: 'Réinitialisation de votre mot de passe',
         html: `
-          <h3>Réinitialisation de mot de passe</h3>
-          <p>Vous avez demandé à réinitialiser votre mot de passe pour votre compte Zero To One.</p>
-          <p>Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe. Ce lien expire dans 1 heure.</p>
-          <a href="${resetLink}" style="padding: 10px 20px; background-color: #E67E22; color: white; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a>
-          <p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+          <div style="font-family: sans-serif; max-width: 600px; margin: auto;">
+            <h3>Réinitialisation de mot de passe</h3>
+            <p>Vous avez demandé à réinitialiser votre mot de passe pour votre compte <strong>Zero To One</strong>.</p>
+            <p>Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe. Ce lien expire dans 1 heure.</p>
+            <div style="margin: 30px 0;">
+              <a href="${resetLink}" style="padding: 12px 24px; background-color: #E67E22; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">Réinitialiser mon mot de passe</a>
+            </div>
+            <p style="font-size: 0.8em; color: #7f8c8d;">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+          </div>
         `,
       });
-      console.log(`Email de reset envoyé à ${email}`);
+      return { success: true };
     } catch (error) {
       console.error('Erreur envoi email reset :', error);
+      throw new InternalServerErrorException(
+        "Échec de l'envoi de l'email de réinitialisation",
+      );
     }
   }
 }

@@ -18,6 +18,7 @@ import { CreateOpeningHourDto } from './dto/create-opening-hour.dto';
 import { UpdateSocialLinksDto } from './dto/update-social-links.dto';
 import { UpdateDesignDto } from './dto/update-design.dto';
 import { UpdatePageConfigDto } from './dto/update-page-config.dto';
+import { RestaurantQueryDto } from './dto/restaurant-query.dto';
 
 @Injectable()
 export class RestaurantsService {
@@ -43,6 +44,48 @@ export class RestaurantsService {
     return this.prisma.restaurant.findMany({
       orderBy: { created_at: 'desc' },
     });
+  }
+
+  async getAllAdmin(query: RestaurantQueryDto) {
+    const { search, status, page = 1, limit = 10 } = query;
+    const skip = (page - 1) * limit;
+
+    // Construction dynamique du filtre Prisma
+    const where: Prisma.RestaurantWhereInput = {};
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    // Exécution de la requête avec count pour la pagination
+    const [items, total] = await Promise.all([
+      this.prisma.restaurant.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: {
+          _count: { select: { menu_categories: true } },
+        },
+      }),
+      this.prisma.restaurant.count({ where }),
+    ]);
+
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        lastPage: Math.ceil(total / limit),
+      },
+    };
   }
 
   async getById(
@@ -378,5 +421,59 @@ export class RestaurantsService {
         `Configuration pour la page ${pageSlug} introuvable`,
       );
     return config;
+  }
+
+  // --- DANS restaurants.service.ts ---
+
+  // 1. Suspension / Activation
+  async updateStatus(
+    id: string,
+    status: 'active' | 'suspended' | 'incomplete',
+  ) {
+    try {
+      return await this.prisma.restaurant.update({
+        where: { id },
+        data: { status },
+      });
+    } catch (e) {
+      throw new NotFoundException('Restaurant introuvable');
+    }
+  }
+
+  // la méthode delete()
+  async hardDelete(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // On récupère le owner_id avant de supprimer le resto
+      const resto = await tx.restaurant.findUnique({ where: { id } });
+      if (!resto) throw new NotFoundException('Restaurant non trouvé');
+
+      await tx.restaurant.delete({ where: { id } });
+
+      await tx.user.delete({ where: { id: resto.owner_id } });
+
+      return { message: 'Restaurant et données associées supprimés' };
+    });
+  }
+
+  // 3. Reset Password (via AuthService)
+  async triggerAdminResetPassword(id: string): Promise<string> {
+    const resto = await this.prisma.restaurant.findUnique({
+      where: { id },
+      select: { owner_id: true },
+    });
+
+    if (!resto) throw new NotFoundException('Restaurant non trouvé');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: resto.owner_id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(
+        "L'administrateur de ce restaurant n'existe pas.",
+      );
+    }
+
+    return user.email; // On retourne l'email pour que le controller puisse appeler AuthService
   }
 }

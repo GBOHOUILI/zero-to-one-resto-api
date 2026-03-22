@@ -135,6 +135,18 @@ describe('Suite E2E : Super Admin Operations', () => {
     expect(res.body.recentPayments[0].method).toBe('MTN_MOMO');
   });
 
+  describe('Phase 4 : Sécurité & Maintenance', () => {
+    it('POST /super-admin/restaurants/:id/reset-password', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/super-admin/restaurants/${restaurantId}/reset-password`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(201); // Ou 200 selon ton implémentation
+
+      // On vérifie que le service nous répond positivement
+      expect(res.body).toBeDefined();
+    });
+  });
+
   afterAll(async () => {
     await app.close();
   });
