@@ -15,6 +15,7 @@ import { TenantService } from './common/services/tenant.service';
 import { TestimonialsModule } from './testimonials/testimonials.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { TeamModule } from './team/team.module';
+import { PaymentsModule } from './payments/payments.module';
 
 import { ScheduleModule } from '@nestjs/schedule';
 
@@ -34,6 +35,7 @@ import { RolesGuard } from './auth/roles.guard';
     AnalyticsModule,
     TeamModule,
     ScheduleModule.forRoot(),
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

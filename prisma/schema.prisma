@@ -231,6 +231,7 @@ model Payment {
   amount          Float
   method          String
   status          String
+  transaction_ref String?
   paid_at         DateTime?
   created_at      DateTime      @default(now())
   restaurant      Restaurant    @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)

@@ -24,18 +24,18 @@ export class PrismaService
    * Crée un client Prisma "étendu" qui injecte le tenantId
    * dans la session PostgreSQL pour la Row Level Security (RLS)
    */
+  // prisma.service.ts
   withTenant(tenantId: string) {
+    const baseClient = this;
     return this.$extends({
       query: {
         $allModels: {
           async $allOperations({ args, query }) {
-            // On enveloppe chaque requête dans une transaction
-            return await (this as any).$transaction(async (tx) => {
-              // On définit la variable 'app.current_tenant' pour PostgreSQL
+            // On utilise le client de base pour démarrer la transaction
+            return await baseClient.$transaction(async (tx) => {
               await tx.$executeRawUnsafe(
                 `SET LOCAL app.current_tenant = '${tenantId}'`,
               );
-              // On exécute la requête Prisma normale
               return query(args);
             });
           },

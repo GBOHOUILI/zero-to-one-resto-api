@@ -13,5 +13,6 @@ import { PrismaService } from '../../prisma/prisma.service';
     SuperAdminSubscriptionsController,
   ],
   providers: [SubscriptionsService, SubscriptionScheduler, PrismaService],
+  exports: [SubscriptionsService],
 })
 export class SubscriptionsModule {}

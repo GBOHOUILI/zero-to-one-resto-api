@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Injectable()
 export class SubscriptionsService {
@@ -92,5 +93,66 @@ export class SubscriptionsService {
 
   async initiateRenewal(userId: string) {
     return { message: 'Redirection vers le paiement...', status: 'pending' };
+  }
+
+  async createManualPayment(dto: CreatePaymentDto) {
+    // 1. Récupérer l'abonnement pour avoir le restaurant_id
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: dto.subscriptionId },
+    });
+
+    if (!subscription) throw new NotFoundException('Abonnement introuvable');
+
+    // 2. Enregistrer le paiement
+    const payment = await this.prisma.payment.create({
+      data: {
+        subscription_id: dto.subscriptionId,
+        restaurant_id: subscription.restaurant_id,
+        amount: dto.amount,
+        method: dto.method,
+        transaction_ref: dto.transactionRef,
+        status: 'COMPLETED',
+        paid_at: new Date(),
+      },
+    });
+
+    // 3. Update de l'abonnement
+    const newEndDate = new Date();
+    newEndDate.setDate(newEndDate.getDate() + 30);
+
+    await this.prisma.subscription.update({
+      where: { id: dto.subscriptionId },
+      data: {
+        status: 'ACTIVE',
+        end_date: newEndDate,
+      },
+    });
+
+    return payment;
+  }
+
+  async extendAfterPayment(subscriptionId: string) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+    });
+
+    if (!subscription) throw new NotFoundException('Abonnement introuvable');
+
+    // Calcul de la nouvelle date : on ajoute 30 jours à la date actuelle
+    // (ou à la date de fin si elle est encore dans le futur)
+    const currentEnd = new Date(subscription.end_date);
+    const now = new Date();
+    const baseDate = currentEnd > now ? currentEnd : now;
+
+    const newEndDate = new Date(baseDate);
+    newEndDate.setDate(newEndDate.getDate() + 30);
+
+    return this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        status: 'ACTIVE',
+        end_date: newEndDate,
+      },
+    });
   }
 }

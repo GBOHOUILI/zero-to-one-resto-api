@@ -11,6 +11,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 
@@ -38,5 +39,12 @@ export class SuperAdminSubscriptionsController {
   @ApiOperation({ summary: 'Assigner manuellement un plan à un restaurant' })
   assign(@Body() dto: CreateSubscriptionDto) {
     return this.subscriptionsService.createSubscription(dto);
+  }
+
+  @Post('payments')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Enregistrer manuellement un paiement reçu' })
+  async recordPayment(@Body() dto: CreatePaymentDto) {
+    return this.subscriptionsService.createManualPayment(dto);
   }
 }
