@@ -30,6 +30,8 @@ class DomainDto {
   verified?: boolean;
 }
 
+// src/restaurants/dto/create-restaurant.dto.ts
+
 export class CreateRestaurantDto {
   @ApiProperty({
     example: 'manager@saveurs-benin.com',
@@ -44,13 +46,7 @@ export class CreateRestaurantDto {
   @IsNotEmpty({ message: 'Nom du restaurant requis' })
   name: string;
 
-  @ApiProperty({
-    example: 'saveurs-benin',
-    description: 'Slug pour l’URL (ex: saveurs-benin.zero-to-one.bj)',
-  })
-  @IsString()
-  @IsNotEmpty({ message: 'Slug requis' })
-  slug: string;
+  // LE CHAMP SLUG EST RETIRÉ : Il est généré automatiquement par le service
 
   @ApiProperty({ example: 'Africain Moderne', required: false })
   @IsString()

@@ -46,30 +46,45 @@ describe('Suite E2E : Opérations Plateforme Zero To One', () => {
     // Note: Le token du restaurateur sera récupéré après sa création en Phase 2
   });
 
-  // --- PHASE 2 : GESTION DES RESTAURANTS (ONBOARDING) ---
+    // --- PHASE 2 : GESTION DES RESTAURANTS (ONBOARDING) ---
   describe('Phase 2 : Onboarding Restaurant', () => {
     it('POST /super-admin/restaurants (Création par SA)', async () => {
-      const payload = {
-        adminEmail: `owner-${uniqueSlug}@test.com`,
-        name: 'Benin Food E2E',
-        slug: uniqueSlug,
-        type: 'Africain',
-        template: 'modern',
-        primaryColor: '#E67E22',
-        currency: 'XOF',
-        seoKeywords: ['test', 'e2e', 'cotonou'],
-        customDomains: [],
+       const payload = {
+         adminEmail: `owner-${uniqueSlug}@test.com`,
+         name: `Benin Food E2E ${uniqueSlug}`, // Le slug sera généré à partir de ça
+         type: 'Africain',
+         template: 'modern',
+         primaryColor: '#E67E22',
+         currency: 'XOF',
+         seoKeywords: ['test', 'e2e', 'cotonou'],
+         customDomains: [],
       };
 
-      const res = await request(app.getHttpServer())
-        .post('/api/super-admin/restaurants')
-        .set('Authorization', `Bearer ${superAdminToken}`)
-        .send(payload)
-        .expect(201);
+       const res = await request(app.getHttpServer())
+         .post('/api/super-admin/restaurants')
+         .set('Authorization', `Bearer ${superAdminToken}`)
+         .send(payload)
+         .expect(201);
 
       restaurantId = res.body.id;
-      expect(restaurantId).toBeDefined();
-    });
+       expect(restaurantId).toBeDefined();
+       // On vérifie que le slug a bien été généré automatiquement par le service
+       expect(res.body.slug).toBeDefined();
+     });
+
+     it('Récupération du token pour le nouveau Restaurateur', async () => {
+       const res = await request(app.getHttpServer())
+         .post('/api/auth/login')
+         .send({
+           email: `owner-${uniqueSlug}@test.com`,
+           password: 'DefaultPass123', // Marche grâce au process.env.NODE_ENV === 'test' dans ton service
+         })
+         .expect(201);
+
+       restoToken = res.body.access_token;
+       expect(restoToken).toBeDefined();
+     });
+   });
 
     it('Récupération du token pour le nouveau Restaurateur', async () => {
       // On simule la connexion du restaurateur créé pour les phases de support

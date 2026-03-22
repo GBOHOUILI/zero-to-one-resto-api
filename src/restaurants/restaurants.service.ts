@@ -125,21 +125,31 @@ export class RestaurantsService {
     superAdminId: string,
     dto: CreateRestaurantDto,
   ): Promise<Restaurant> {
+    // 1. Vérification des permissions du Super Admin
     const superAdmin = await this.prisma.user.findUnique({
       where: { id: superAdminId },
     });
+
     if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
       throw new UnauthorizedException(
         'Seul un super admin peut créer un restaurant',
       );
     }
 
-    const existing = await this.prisma.user.findUnique({
+    // 2. Vérification de l'unicité de l'email admin
+    const existingEmail = await this.prisma.user.findUnique({
       where: { email: dto.adminEmail },
     });
-    if (existing) throw new BadRequestException('Cet email est déjà utilisé');
 
-    // Dans la méthode createRestaurant
+    if (existingEmail) {
+      throw new BadRequestException('Cet email est déjà utilisé');
+    }
+
+    // 3. GÉNÉRATION AUTOMATIQUE DU SLUG UNIQUE
+    // On se base sur le nom du restaurant fourni dans le DTO
+    const finalSlug = await this.generateUniqueSlug(dto.name);
+
+    // 4. GESTION DU MOT DE PASSE (Fixe en test pour les suites E2E, aléatoire en prod)
     const password =
       process.env.NODE_ENV === 'test'
         ? 'DefaultPass123'
@@ -147,8 +157,10 @@ export class RestaurantsService {
 
     const hashed = await bcrypt.hash(password, 10);
 
+    // 5. TRANSACTION PRISMA (Création User -> Restaurant -> Profile)
     return this.prisma
       .$transaction(async (tx) => {
+        // Création du compte utilisateur (Admin du restaurant)
         const restoAdmin = await tx.user.create({
           data: {
             email: dto.adminEmail,
@@ -157,19 +169,21 @@ export class RestaurantsService {
           },
         });
 
+        // Création du restaurant avec le slug généré
         const restaurant = await tx.restaurant.create({
           data: {
             name: dto.name,
-            slug: dto.slug,
+            slug: finalSlug,
             owner_id: restoAdmin.id,
             status: 'incomplete',
-            type: 'default',
-            template: 'default',
-            primary_color: '#000000',
-            currency: 'XOF',
+            type: dto.type || 'default',
+            template: dto.template || 'default',
+            primary_color: dto.primaryColor || '#000000',
+            currency: dto.currency || 'XOF',
           },
         });
 
+        // Liaison ou création du profil
         await tx.profile.upsert({
           where: { user_id: restoAdmin.id },
           update: { restaurantId: restaurant.id },
@@ -183,6 +197,7 @@ export class RestaurantsService {
         return restaurant;
       })
       .then(async (res) => {
+        // 6. Envoi de l'email de bienvenue avec les identifiants
         await this.mailService.sendWelcomeEmail(
           dto.adminEmail,
           res.name,
@@ -483,4 +498,34 @@ export class RestaurantsService {
 
     return user.email; // On retourne l'email pour que le controller puisse appeler AuthService
   }
+
+  private async generateUniqueSlug(name: string): Promise<string> {
+    // 1. Nettoyage de base (minuscules, accents, caractères spéciaux)
+    let slug = name
+      .toLowerCase()
+      .normalize('NFD') // Sépare les accents des lettres
+      .replace(/[\u0300-\u036f]/g, '') // Supprime les accents
+      .replace(/[^a-z0-9]+/g, '-') // Remplace tout ce qui n'est pas alphanumérique par des tirets
+      .replace(/(^-|-$)+/g, ''); // Supprime les tirets au début et à la fin
+
+    let uniqueSlug = slug;
+    let counter = 1;
+    let exists = true;
+
+    // 2. Boucle de vérification d'unicité
+    while (exists) {
+      const restaurant = await this.prisma.restaurant.findUnique({
+        where: { slug: uniqueSlug },
+      });
+
+      if (!restaurant) {
+        exists = false;
+      } else {
+        uniqueSlug = `${slug}-${counter}`;
+        counter++;
+      }
+    }
+
+    return uniqueSlug;
+  } // --- UTILITAIRES SLUG ---
 }
