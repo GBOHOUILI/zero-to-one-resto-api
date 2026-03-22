@@ -11,6 +11,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { RedisModule } from './common/redis/redis.module';
 import { TenantMiddleware } from './tenants/tenant.middleware';
 import { TenantService } from './tenants/tenant.service';
+import { SeoModule } from './seo/seo.module';
 
 import { TestimonialsModule } from './testimonials/testimonials.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -38,6 +39,7 @@ import { RolesGuard } from './auth/roles.guard';
     ScheduleModule.forRoot(),
     PaymentsModule,
     SupportModule,
+    SeoModule,
   ],
   controllers: [AppController],
   providers: [

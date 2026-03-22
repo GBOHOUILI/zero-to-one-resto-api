@@ -278,6 +278,45 @@ describe('Suite E2E : Opérations Plateforme Zero To One', () => {
     });
   });
 
+  // --- PHASE 8 : VISIBILITÉ & SEO ---
+    describe('Phase 8 : SEO & Visibility (The Product)', () => {
+
+      it('GET /seo/sitemap.xml (Public - Sitemap Generation)', async () => {
+        // On simule l'appel via le host du resto pour le multi-tenant
+        const res = await request(app.getHttpServer())
+          .get('/api/seo/sitemap.xml')
+          .set('host', `${uniqueSlug}.localhost`) // Simule le sous-domaine
+          .expect(200);
+
+        expect(res.header['content-type']).toContain('application/xml');
+        expect(res.text).toContain('<?xml');
+        expect(res.text).toContain('/menu');
+      });
+
+      it('GET /api/seo/super-admin/dashboard (SA - Monitoring)', async () => {
+        const res = await request(app.getHttpServer())
+          .get('/api/seo/super-admin/dashboard')
+          .set('Authorization', `Bearer ${superAdminToken}`)
+          .expect(200);
+
+        expect(Array.isArray(res.body)).toBe(true);
+        const currentResto = res.body.find((r: any) => r.id === restaurantId);
+        expect(currentResto).toBeDefined();
+        expect(currentResto._count.menu_items).toBeDefined();
+      });
+
+      it('PATCH /api/seo/super-admin/optimize/:id (SA - SEO Injection)', async () => {
+        const keywords = ['meilleur restaurant', 'cotonou food', 'zero to one'];
+        const res = await request(app.getHttpServer())
+          .patch(`/api/seo/super-admin/optimize/${restaurantId}`)
+          .set('Authorization', `Bearer ${superAdminToken}`)
+          .send({ keywords })
+          .expect(200);
+
+        expect(res.body.seo_keywords).toContain('zero to one');
+      });
+    });
+
   afterAll(async () => {
     await app.close();
   });
