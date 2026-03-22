@@ -36,12 +36,32 @@ export class SuperAdminAnalyticsController {
     return this.analyticsService.getRestoDashboard(resId);
   }
 
-  @Get('platform-stats') // C'est le "Dashboard Overview" global
+  @Get('platform-stats')
   @ApiOperation({
     summary: 'Statistiques globales de la plateforme (Business & Usage)',
   })
   @Roles(Role.SUPER_ADMIN)
   async getPlatformStats() {
     return this.analyticsService.getPlatformGlobalStats();
+  }
+
+  @Get('revenue')
+  @ApiOperation({ summary: 'Statistiques de revenus mensuels et conversion' })
+  async getRevenueStats() {
+    const stats = await this.analyticsService.getPlatformGlobalStats();
+    return {
+      totalRevenue: stats.overview.totalRevenue,
+      monthlyRevenue: stats.overview.monthlyRevenue,
+      conversionRate: stats.overview.conversionRate,
+    };
+  }
+
+  @Get('product-performance')
+  @ApiOperation({
+    summary:
+      'Métriques avancées : Activation, Abandon et Adoption des fonctionnalités',
+  })
+  async getProductPerformance() {
+    return this.analyticsService.getAdvancedProductMetrics();
   }
 }

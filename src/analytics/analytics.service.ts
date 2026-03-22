@@ -136,33 +136,52 @@ export class AnalyticsService {
   }
 
   async getPlatformGlobalStats() {
-    const [totalRestaurants, totalUsers, totalPayments, activeSubscriptions] =
-      await Promise.all([
-        this.prisma.restaurant.count(),
-        this.prisma.user.count(),
-        this.prisma.payment.aggregate({
-          where: { status: 'COMPLETED' },
-          _sum: { amount: true },
-        }),
-        this.prisma.subscription.count({
-          where: { status: 'ACTIVE' },
-        }),
-      ]);
+    const now = new Date();
+    const firstDayMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Optionnel : Récupérer les 5 derniers paiements pour le dashboard
-    const recentPayments = await this.prisma.payment.findMany({
-      take: 5,
-      orderBy: { created_at: 'desc' },
-      include: { restaurant: { select: { name: true } } },
-    });
+    const [
+      totalRestaurants,
+      totalUsers,
+      revenueStats,
+      monthlyRevenue,
+      activeSubscriptions,
+      recentPayments, // On récupère aussi les paiements ici
+    ] = await Promise.all([
+      this.prisma.restaurant.count(),
+      this.prisma.user.count(),
+      this.prisma.payment.aggregate({
+        where: { status: 'COMPLETED' },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: 'COMPLETED',
+          paid_at: { gte: firstDayMonth },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.subscription.count({
+        where: { status: 'ACTIVE' },
+      }),
+      this.prisma.payment.findMany({
+        // Pour l'affichage rapide sur le dashboard
+        take: 5,
+        orderBy: { created_at: 'desc' },
+        include: { restaurant: { select: { name: true } } },
+      }),
+    ]);
+
+    const totalRev = revenueStats._sum.amount || 0;
+    const monthRev = monthlyRevenue._sum.amount || 0;
 
     return {
       overview: {
         totalRestaurants,
         totalUsers,
-        totalRevenue: totalPayments._sum.amount || 0,
+        totalRevenue: totalRev,
+        monthlyRevenue: monthRev,
         activeSubscriptions,
-        retentionRate:
+        conversionRate:
           totalRestaurants > 0
             ? ((activeSubscriptions / totalRestaurants) * 100).toFixed(2) + '%'
             : '0%',
@@ -174,6 +193,67 @@ export class AnalyticsService {
         date: p.created_at,
         method: p.method,
       })),
+      businessHealth: {
+        averageRevenuePerUser:
+          activeSubscriptions > 0
+            ? (totalRev / activeSubscriptions).toFixed(2)
+            : 0,
+      },
+    };
+  }
+
+  async getAdvancedProductMetrics() {
+    const [totalRestos, activationStats, featureStats] = await Promise.all([
+      this.prisma.restaurant.count(),
+
+      this.prisma.restaurant.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+
+      this.prisma.$transaction([
+        this.prisma.customDomain.count(),
+        this.prisma.menuItem.count(),
+        this.prisma.restaurant.count({
+          where: {
+            opening_hours: {
+              some: {},
+            },
+          },
+        }),
+      ]),
+    ]);
+
+    // Calcul de l'Abandon (Restaurants 'incomplete' ou sans menu)
+    const incompleteCount =
+      activationStats.find((s) => s.status === 'incomplete')?._count._all || 0;
+    const churnRate =
+      totalRestos > 0 ? ((incompleteCount / totalRestos) * 100).toFixed(2) : 0;
+
+    return {
+      activation: {
+        total: totalRestos,
+        byStatus: activationStats.map((s) => ({
+          status: s.status,
+          count: s._count._all,
+        })),
+        onboardingDropOffRate: `${churnRate}%`,
+      },
+      featureAdoption: {
+        customDomains: featureStats[0],
+        totalMenuItems: featureStats[1],
+        restaurantsWithHours: featureStats[2],
+        adoptionRates: {
+          customDomain:
+            totalRestos > 0
+              ? ((featureStats[0] / totalRestos) * 100).toFixed(2) + '%'
+              : '0%',
+          digitalMenu:
+            totalRestos > 0
+              ? ((featureStats[2] / totalRestos) * 100).toFixed(2) + '%'
+              : '0%',
+        },
+      },
     };
   }
 }

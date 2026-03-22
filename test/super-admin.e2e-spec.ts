@@ -135,6 +135,16 @@ describe('Suite E2E : Super Admin Operations', () => {
     expect(res.body.recentPayments[0].method).toBe('MTN_MOMO');
   });
 
+  it('GET /super-admin/analytics/product-performance', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/super-admin/analytics/product-performance')
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(res.body.activation).toBeDefined();
+    expect(res.body.featureAdoption).toHaveProperty('customDomains');
+  });
+
   describe('Phase 4 : Sécurité & Maintenance', () => {
     it('POST /super-admin/restaurants/:id/reset-password', async () => {
       const res = await request(app.getHttpServer())
