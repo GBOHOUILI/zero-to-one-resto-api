@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -19,21 +20,44 @@ export class AuthService {
     private mailService: MailService,
   ) {}
 
-  // Enregistrement d'un utilisateur
+  // ─── Validation de la force du mot de passe ───────────────────────────────────
+  private validatePasswordStrength(password: string): void {
+    if (password.length < 8) {
+      throw new BadRequestException(
+        'Le mot de passe doit contenir au moins 8 caractères',
+      );
+    }
+    if (!/[A-Z]/.test(password)) {
+      throw new BadRequestException(
+        'Le mot de passe doit contenir au moins une majuscule',
+      );
+    }
+    if (!/[0-9]/.test(password)) {
+      throw new BadRequestException(
+        'Le mot de passe doit contenir au moins un chiffre',
+      );
+    }
+  }
+
+  // ─── Enregistrement ───────────────────────────────────────────────────────────
   async register(
     email: string,
     password: string,
     role: Role,
     restaurantId?: string,
   ) {
+    // Validation de la force du mot de passe
+    this.validatePasswordStrength(password);
+
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
     });
+    // Message générique pour ne pas révéler l'existence d'un email
     if (existingUser) {
-      throw new UnauthorizedException({ message: 'Email déjà utilisé' });
+      throw new BadRequestException('Impossible de créer ce compte');
     }
 
-    const hashed = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 12); // 12 rounds
 
     const user = await this.prisma.user.create({
       data: { email, password: hashed, role },
@@ -56,13 +80,14 @@ export class AuthService {
     };
   }
 
-  // Connexion
+  // ─── Connexion ────────────────────────────────────────────────────────────────
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { profile: { select: { restaurantId: true } } },
     });
 
+    // Message identique que l'email existe ou non (anti-enumeration)
     if (!user || !user.password) {
       throw new UnauthorizedException('Identifiants invalides');
     }
@@ -92,9 +117,10 @@ export class AuthService {
     };
   }
 
-  // Mot de passe oublié
+  // ─── Mot de passe oublié ──────────────────────────────────────────────────────
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
+    // ✅ Réponse identique que l'email existe ou non (anti-enumeration)
     if (!user) return { message: 'Si cet email existe, un lien a été envoyé.' };
 
     const token = crypto.randomBytes(32).toString('hex');
@@ -111,8 +137,11 @@ export class AuthService {
     return { message: 'Si cet email existe, un lien a été envoyé.' };
   }
 
-  // Réinitialisation du mot de passe
+  // ─── Réinitialisation du mot de passe ────────────────────────────────────────
   async resetPassword(token: string, newPassword: string) {
+    // Validation de la force du nouveau mot de passe
+    this.validatePasswordStrength(newPassword);
+
     const user = await this.prisma.user.findFirst({
       where: {
         reset_token: token,
@@ -122,17 +151,23 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Token invalide ou expiré');
 
-    const hashed = await bcrypt.hash(newPassword, 10);
+    const hashed = await bcrypt.hash(newPassword, 12);
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { password: hashed, reset_token: null, reset_token_expiry: null },
+      data: {
+        password: hashed,
+        reset_token: null,
+        reset_token_expiry: null,
+        // Invalide aussi le refresh token pour forcer une reconnexion
+        refresh_token: null,
+      },
     });
 
     return { message: 'Mot de passe mis à jour avec succès.' };
   }
 
-  // Génération de tokens JWT
+  // ─── Génération de tokens JWT ─────────────────────────────────────────────────
   async getTokens(
     userId: string,
     email: string,
@@ -155,16 +190,16 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  // Stocker le refresh token haché
+  // ─── Stocker le refresh token haché ──────────────────────────────────────────
   async updateRtHash(userId: string, rt: string) {
-    const hash = await bcrypt.hash(rt, 10);
+    const hash = await bcrypt.hash(rt, 12);
     await this.prisma.user.update({
       where: { id: userId },
       data: { refresh_token: hash },
     });
   }
 
-  // Rafraîchir les tokens
+  // ─── Rafraîchir les tokens ────────────────────────────────────────────────────
   async refreshTokens(userId: string, rt: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.refresh_token)
@@ -187,5 +222,14 @@ export class AuthService {
     await this.updateRtHash(user.id, tokens.refresh_token);
 
     return tokens;
+  }
+
+  // ─── Déconnexion (invalider le refresh token) ─────────────────────────────────
+  async logout(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refresh_token: null },
+    });
+    return { message: 'Déconnexion réussie' };
   }
 }

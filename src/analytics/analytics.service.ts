@@ -1,9 +1,14 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TrackEventDto } from './dto/track-event.dto';
 
 @Injectable()
 export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
   constructor(private prisma: PrismaService) {}
 
   async track(
@@ -26,7 +31,8 @@ export class AnalyticsService {
     } catch (error) {
       console.error('Analytics Error:', error);
       // On ne bloque pas l'utilisateur si le tracking échoue, mais on log
-      throw new InternalServerErrorException('Erreur de tracking');
+      this.logger.warn(`Analytics tracking failed: ${error.message}`);
+      return null;
     }
   }
 

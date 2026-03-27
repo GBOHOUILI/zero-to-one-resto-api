@@ -4,24 +4,48 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import basicAuth = require('express-basic-auth');
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // --- PROTECTION DU SWAGGER ---
-  // On applique la sécurité uniquement sur les routes de la doc
+  // ─── Sécurité HTTP Headers (helmet) ──────────────────────────────────────────
+  app.use(helmet());
+
+  // ─── CORS ─────────────────────────────────────────────────────────────────────
+  // IMPORTANT : Remplace les origines par tes vrais domaines en production
+  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3001')
+    .split(',')
+    .map((o) => o.trim());
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      // Autoriser les requêtes sans origin (ex: Postman, mobile apps)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: Origin ${origin} non autorisée`));
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Slug'],
+    credentials: true,
+  });
+
+  // ─── Protection du Swagger ────────────────────────────────────────────────────
+  // ✅ Variables d'environnement au lieu de valeurs en dur
   app.use(
     ['/api-docs', '/api-docs-json'],
     basicAuth({
       challenge: true,
       users: {
-        // Idéalement, utilise des variables d'environnement (process.env.SWAGGER_USER)
-        'admin-resto': 'ZetoToOne2026!',
+        [process.env.SWAGGER_USER || 'admin']:
+          process.env.SWAGGER_PASS || 'change-me',
       },
     }),
   );
 
-  // Active la validation globale
+  // ─── Validation globale ───────────────────────────────────────────────────────
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -30,11 +54,13 @@ async function bootstrap() {
     }),
   );
 
-  // Toutes tes routes commenceront par /api (sauf Swagger si configuré au-dessus)
+  // ─── Préfixe global ───────────────────────────────────────────────────────────
   app.setGlobalPrefix('api');
 
+  // ─── Filtre d'exceptions global ───────────────────────────────────────────────
   app.useGlobalFilters(new AllExceptionsFilter());
 
+  // ─── Swagger ──────────────────────────────────────────────────────────────────
   const config = new DocumentBuilder()
     .setTitle('Zero-To-One Resto SaaS API')
     .setDescription(
@@ -54,8 +80,6 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-
-  // On expose le swagger sur /api-docs pour ne pas qu'il s'entrechoque avec le préfixe global /api
   SwaggerModule.setup('api-docs', app, document);
 
   const port = process.env.PORT ?? 3000;

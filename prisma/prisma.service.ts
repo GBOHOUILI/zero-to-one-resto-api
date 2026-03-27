@@ -33,9 +33,7 @@ export class PrismaService
           async $allOperations({ args, query }) {
             // On utilise le client de base pour démarrer la transaction
             return await baseClient.$transaction(async (tx) => {
-              await tx.$executeRawUnsafe(
-                `SET LOCAL app.current_tenant = '${tenantId}'`,
-              );
+              await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
               return query(args);
             });
           },

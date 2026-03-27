@@ -1,63 +1,82 @@
-import { Controller, Post, Body, Get } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Get,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 import { Public } from './public.decorator';
 import { GetUser } from '../common/get-user.decorator';
-import { ApiResponse } from '@nestjs/swagger';
-import { LoginResponseDto } from './dto/auth-response.dto';
 
-@ApiTags('Auth - Général')
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Public()
-  @Post('login')
-  @ApiOperation({ summary: 'Connexion universelle' })
-  @ApiResponse({ status: 200, type: LoginResponseDto }) // ← ICI
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto.email, loginDto.password);
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Créer un compte' })
+  register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto.email, dto.password, dto.role);
   }
 
-  @ApiBearerAuth('access-token')
-  @Get('me')
-  @ApiOperation({ summary: 'Récupérer mon profil et mon rôle' })
-  @ApiResponse({
-    status: 200,
-    schema: {
-      example: {
-        id: 'uuid',
-        email: 'dev@uac.bj',
-        role: 'SUPER_ADMIN',
-        restaurantId: null,
-      },
-    },
-  })
-  async getMe(@GetUser() user: any) {
-    return user;
+  @Public()
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Se connecter' })
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto.email, dto.password);
   }
+
   @Public()
   @Post('forgot-password')
-  @ApiOperation({ summary: 'Demander un lien de réinitialisation' })
-  async forgotPassword(@Body('email') email: string) {
-    return this.authService.forgotPassword(email);
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Demander un lien de réinitialisation de mot de passe',
+  })
+  forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email);
   }
 
   @Public()
   @Post('reset-password')
-  @ApiOperation({ summary: 'Confirmer le nouveau mot de passe avec le token' })
-  async resetPassword(@Body() resetDto: { token: string; password: string }) {
-    return this.authService.resetPassword(resetDto.token, resetDto.password);
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Réinitialiser le mot de passe avec le token' })
+  resetPassword(@Body() body: { token: string; newPassword: string }) {
+    return this.authService.resetPassword(body.token, body.newPassword);
   }
 
-  @Public()
+  // ✅ NOUVEAU : Endpoint de déconnexion — invalide le refresh token en DB
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Se déconnecter (invalide le refresh token)' })
+  logout(@GetUser('id') userId: string) {
+    return this.authService.logout(userId);
+  }
+
+  // ✅ Refresh tokens
   @Post('refresh')
-  @ApiOperation({ summary: 'Renouveler le token access' })
-  async refresh(
-    @Body('userId') userId: string,
-    @Body('refreshToken') refreshToken: string,
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rafraîchir les tokens JWT' })
+  refreshTokens(
+    @GetUser('id') userId: string,
+    @GetUser('refreshToken') rt: string,
   ) {
-    return this.authService.refreshTokens(userId, refreshToken);
+    return this.authService.refreshTokens(userId, rt);
+  }
+
+  @Get('me')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "Récupérer le profil de l'utilisateur connecté" })
+  getMe(@GetUser() user: any) {
+    return user;
   }
 }

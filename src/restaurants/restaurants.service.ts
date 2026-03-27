@@ -1,3 +1,4 @@
+// src/restaurants/restaurants.service.ts
 import {
   BadRequestException,
   ForbiddenException,
@@ -31,30 +32,23 @@ export class RestaurantsService {
     private domainValidator: DomainValidationService,
   ) {}
 
-  // Utilitaire pour le client RLS
   private db(tenantId: string) {
     return this.prisma.withTenant(tenantId);
   }
 
   // ────────────────────────────────────────────────
-  // Lecture : SUPER_ADMIN voit tout, RESTO_ADMIN voit le sien
+  // Lecture
   // ────────────────────────────────────────────────
   async getAll(role: string, tenantId?: string): Promise<Restaurant[]> {
-    // Si c'est un admin de resto, on force le filtrage RLS
     if (role !== 'SUPER_ADMIN' && tenantId) {
       return this.db(tenantId).restaurant.findMany();
     }
-    // Sinon (SUPER_ADMIN), on bypass la RLS en utilisant le prisma standard
-    return this.prisma.restaurant.findMany({
-      orderBy: { created_at: 'desc' },
-    });
+    return this.prisma.restaurant.findMany({ orderBy: { created_at: 'desc' } });
   }
 
   async getAllAdmin(query: RestaurantQueryDto) {
     const { search, status, page = 1, limit = 10 } = query;
     const skip = (page - 1) * limit;
-
-    // Construction dynamique du filtre Prisma
     const where: Prisma.RestaurantWhereInput = {};
 
     if (search) {
@@ -63,32 +57,22 @@ export class RestaurantsService {
         { slug: { contains: search, mode: 'insensitive' } },
       ];
     }
+    if (status) where.status = status;
 
-    if (status) {
-      where.status = status;
-    }
-
-    // Exécution de la requête avec count pour la pagination
     const [items, total] = await Promise.all([
       this.prisma.restaurant.findMany({
         where,
         skip,
         take: limit,
         orderBy: { created_at: 'desc' },
-        include: {
-          _count: { select: { menu_categories: true } },
-        },
+        include: { _count: { select: { menu_categories: true } } },
       }),
       this.prisma.restaurant.count({ where }),
     ]);
 
     return {
       items,
-      meta: {
-        total,
-        page,
-        lastPage: Math.ceil(total / limit),
-      },
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
     };
   }
 
@@ -100,12 +84,10 @@ export class RestaurantsService {
     try {
       const client =
         role !== 'SUPER_ADMIN' && tenantId ? this.db(tenantId) : this.prisma;
-
       const restaurant = await client.restaurant.findUnique({
         where: { id },
         include: { custom_domains: true },
       });
-
       if (!restaurant) throw new NotFoundException('Restaurant non trouvé');
       return restaurant;
     } catch (e) {
@@ -120,51 +102,37 @@ export class RestaurantsService {
   }
 
   // ────────────────────────────────────────────────
-  // Création : Action "God Mode" (bypass RLS car nouvelle entrée)
-  // ────────────────────────────────────────────────
-  // ────────────────────────────────────────────────
-  // Création : Action "God Mode" (bypass RLS car nouvelle entrée)
+  // Création (Super Admin uniquement)
   // ────────────────────────────────────────────────
   async createRestaurant(
     superAdminId: string,
     dto: CreateRestaurantDto,
   ): Promise<Restaurant> {
-    // 1. Vérification des permissions du Super Admin
     const superAdmin = await this.prisma.user.findUnique({
       where: { id: superAdminId },
     });
-
     if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
       throw new UnauthorizedException(
         'Seul un super admin peut créer un restaurant',
       );
     }
 
-    // 2. Vérification de l'unicité de l'email admin
     const existingEmail = await this.prisma.user.findUnique({
       where: { email: dto.adminEmail },
     });
-
     if (existingEmail) {
       throw new BadRequestException('Cet email est déjà utilisé');
     }
 
-    // 3. GÉNÉRATION AUTOMATIQUE DU SLUG UNIQUE
-    // On se base sur le nom du restaurant fourni dans le DTO
     const finalSlug = await this.generateUniqueSlug(dto.name);
-
-    // 4. GESTION DU MOT DE PASSE (Fixe en test pour les suites E2E, aléatoire en prod)
     const password =
       process.env.NODE_ENV === 'test'
         ? 'DefaultPass123'
         : this.generateRandomPassword(12);
+    const hashed = await bcrypt.hash(password, 12);
 
-    const hashed = await bcrypt.hash(password, 10);
-
-    // 5. TRANSACTION PRISMA (Création User -> Restaurant -> Profile)
     return this.prisma
       .$transaction(async (tx) => {
-        // Création du compte utilisateur (Admin du restaurant)
         const restoAdmin = await tx.user.create({
           data: {
             email: dto.adminEmail,
@@ -172,8 +140,6 @@ export class RestaurantsService {
             role: 'RESTO_ADMIN',
           },
         });
-
-        // Création du restaurant avec le slug généré
         const restaurant = await tx.restaurant.create({
           data: {
             name: dto.name,
@@ -186,8 +152,6 @@ export class RestaurantsService {
             currency: dto.currency || 'XOF',
           },
         });
-
-        // Liaison ou création du profil
         await tx.profile.upsert({
           where: { user_id: restoAdmin.id },
           update: { restaurantId: restaurant.id },
@@ -197,11 +161,9 @@ export class RestaurantsService {
             restaurantId: restaurant.id,
           },
         });
-
         return restaurant;
       })
       .then(async (res) => {
-        // 6. Envoi de l'email de bienvenue avec les identifiants
         await this.mailService.sendWelcomeEmail(
           dto.adminEmail,
           res.name,
@@ -212,7 +174,7 @@ export class RestaurantsService {
   }
 
   // ────────────────────────────────────────────────
-  // Update & Delete : Sécurisés par RLS
+  // Update & Delete
   // ────────────────────────────────────────────────
   async update(
     id: string,
@@ -221,13 +183,8 @@ export class RestaurantsService {
     tenantId: string,
   ): Promise<Restaurant> {
     try {
-      // Si RESTO_ADMIN, la RLS empêchera de modifier un autre ID que le sien
       const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(tenantId);
-
-      return await client.restaurant.update({
-        where: { id },
-        data: dto,
-      });
+      return await client.restaurant.update({ where: { id }, data: dto });
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -242,19 +199,13 @@ export class RestaurantsService {
   }
 
   async delete(slug: string, role: string): Promise<Restaurant> {
-    // 1. Vérification stricte du rôle
     if (role !== 'SUPER_ADMIN') {
       throw new ForbiddenException(
         'Seul le Super Admin peut supprimer un restaurant',
       );
     }
-
     try {
-      // 2. Suppression directe par slug
-      // Prisma remontera une erreur P2025 si le slug n'existe pas
-      return await this.prisma.restaurant.delete({
-        where: { slug },
-      });
+      return await this.prisma.restaurant.delete({ where: { slug } });
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -270,75 +221,47 @@ export class RestaurantsService {
     }
   }
 
-  private generateRandomPassword(length: number): string {
-    const chars =
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
-    return Array.from({ length }, () =>
-      chars.charAt(Math.floor(Math.random() * chars.length)),
-    ).join('');
-  }
-
-  async addCustomDomain(restaurantId: string, dto: CreateCustomDomainDto) {
-    const hostname = dto.hostname.toLowerCase().trim();
-
-    // 1. Vérification DNS
-    const isValid = await this.domainValidator.validateConfig(hostname);
-    if (!isValid) {
-      throw new BadRequestException(
-        `Le domaine ${hostname} ne pointe pas correctement vers nos serveurs. Vérifiez vos CNAME/A records.`,
-      );
-    }
-
-    // 2. Vérification unicité en DB
-    const existing = await this.prisma.customDomain.findUnique({
-      where: { hostname },
-    });
-    if (existing) throw new BadRequestException('Ce domaine est déjà utilisé');
-
-    // 3. Création en DB
-    const newDomain = await this.prisma.customDomain.create({
-      data: {
-        hostname,
-        isPrimary: dto.isPrimary ?? false,
-        restaurantId,
-      },
-    });
-
-    // 4. Mapping Redis Immédiat (On gagne en réactivité)
-    const cacheKey = `tenant:${hostname}`;
-    await this.redis.set(cacheKey, restaurantId, 3600); // TTL 1h pour les domaines validés
-
-    return newDomain;
-  }
-
-  async removeCustomDomain(domainId: string) {
+  async updateStatus(
+    id: string,
+    status: 'active' | 'suspended' | 'incomplete',
+  ) {
     try {
-      return await this.prisma.customDomain.delete({
-        where: { id: domainId },
+      return await this.prisma.restaurant.update({
+        where: { id },
+        data: { status },
       });
     } catch (e) {
-      throw new NotFoundException('Domaine introuvable');
+      throw new NotFoundException('Restaurant introuvable');
     }
   }
 
+  async hardDelete(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const resto = await tx.restaurant.findUnique({ where: { id } });
+      if (!resto) throw new NotFoundException('Restaurant non trouvé');
+      await tx.restaurant.delete({ where: { id } });
+      await tx.user.delete({ where: { id: resto.owner_id } });
+      return { message: 'Restaurant et données associées supprimés' };
+    });
+  }
+
+  // ────────────────────────────────────────────────
+  // Contact & Horaires
+  // ────────────────────────────────────────────────
   async updateContact(
     restaurantId: string,
     dto: UpdateContactDto,
     role: string,
   ): Promise<any> {
     const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(restaurantId);
-
-    // Vérifier si le contact existe déjà
     const existing = await client.contact.findUnique({
       where: { restaurant_id: restaurantId },
     });
-
     if (!existing && !dto.whatsapp) {
       throw new BadRequestException(
         'Le numéro WhatsApp est obligatoire pour configurer les contacts.',
       );
     }
-
     return client.contact.upsert({
       where: { restaurant_id: restaurantId },
       update: dto,
@@ -358,9 +281,7 @@ export class RestaurantsService {
     hours: CreateOpeningHourDto[],
     role: string,
   ): Promise<any> {
-    const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(restaurantId);
-
-    // Validation métier : On vérifie chaque ligne
+    // Validation métier
     for (const h of hours) {
       if (!h.is_closed && h.open_time >= h.close_time) {
         throw new BadRequestException(
@@ -369,20 +290,30 @@ export class RestaurantsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Nettoyage des anciens horaires pour ce restaurant
-      await tx.openingHour.deleteMany({
+    // ✅ FIX : On utilise le bon client selon le rôle
+    // Avant : this.prisma.$transaction() était utilisé directement,
+    // bypassant le client RLS pour les RESTO_ADMIN
+    const isSuperAdmin = role === 'SUPER_ADMIN';
+
+    if (isSuperAdmin) {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.openingHour.deleteMany({
+          where: { restaurant_id: restaurantId },
+        });
+        return tx.openingHour.createMany({
+          data: hours.map((h) => ({ ...h, restaurant_id: restaurantId })),
+        });
+      });
+    } else {
+      // Pour les RESTO_ADMIN : chaque opération passe par withTenant (RLS)
+      const client = this.db(restaurantId);
+      await client.openingHour.deleteMany({
         where: { restaurant_id: restaurantId },
       });
-
-      // Insertion des nouveaux
-      return tx.openingHour.createMany({
-        data: hours.map((h) => ({
-          ...h,
-          restaurant_id: restaurantId,
-        })),
+      return client.openingHour.createMany({
+        data: hours.map((h) => ({ ...h, restaurant_id: restaurantId })),
       });
-    });
+    }
   }
 
   async updateSocialLinks(
@@ -391,20 +322,27 @@ export class RestaurantsService {
     role: string,
   ): Promise<any> {
     const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(restaurantId);
-
     return client.socialLink.upsert({
       where: { restaurant_id: restaurantId },
       update: dto,
-      create: {
-        ...dto,
-        restaurant_id: restaurantId,
-      },
+      create: { ...dto, restaurant_id: restaurantId },
     });
   }
 
-  async updateDesign(id: string, dto: UpdateDesignDto) {
+  // ────────────────────────────────────────────────
+  // Design
+  // ────────────────────────────────────────────────
+  // ✅ FIX : Ajout de role + tenantId pour que les RESTO_ADMIN
+  // ne puissent modifier que leur propre restaurant (via RLS)
+  async updateDesign(
+    id: string,
+    dto: UpdateDesignDto,
+    role: string,
+    tenantId: string,
+  ) {
     try {
-      return await this.prisma.restaurant.update({
+      const client = role === 'SUPER_ADMIN' ? this.prisma : this.db(tenantId);
+      return await client.restaurant.update({
         where: { id },
         data: dto,
         select: {
@@ -415,13 +353,22 @@ export class RestaurantsService {
           dark_mode: true,
         },
       });
-    } catch (error) {
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new ForbiddenException('Modification du design interdite');
+      }
       throw new InternalServerErrorException(
         'Impossible de mettre à jour le design',
       );
     }
   }
 
+  // ────────────────────────────────────────────────
+  // Page Config
+  // ────────────────────────────────────────────────
   async updatePageConfig(
     restaurantId: string,
     pageSlug: string,
@@ -467,79 +414,86 @@ export class RestaurantsService {
     return config;
   }
 
-  // --- DANS restaurants.service.ts ---
+  // ────────────────────────────────────────────────
+  // Custom Domains
+  // ────────────────────────────────────────────────
+  async addCustomDomain(restaurantId: string, dto: CreateCustomDomainDto) {
+    const hostname = dto.hostname.toLowerCase().trim();
+    const isValid = await this.domainValidator.validateConfig(hostname);
+    if (!isValid) {
+      throw new BadRequestException(
+        `Le domaine ${hostname} ne pointe pas correctement vers nos serveurs.`,
+      );
+    }
+    const existing = await this.prisma.customDomain.findUnique({
+      where: { hostname },
+    });
+    if (existing) throw new BadRequestException('Ce domaine est déjà utilisé');
 
-  // 1. Suspension / Activation
-  async updateStatus(
-    id: string,
-    status: 'active' | 'suspended' | 'incomplete',
-  ) {
+    const newDomain = await this.prisma.customDomain.create({
+      data: { hostname, isPrimary: dto.isPrimary ?? false, restaurantId },
+    });
+
+    await this.redis.set(`tenant:${hostname}`, restaurantId, 3600);
+    return newDomain;
+  }
+
+  async removeCustomDomain(domainId: string) {
     try {
-      return await this.prisma.restaurant.update({
-        where: { id },
-        data: { status },
-      });
+      return await this.prisma.customDomain.delete({ where: { id: domainId } });
     } catch (e) {
-      throw new NotFoundException('Restaurant introuvable');
+      throw new NotFoundException('Domaine introuvable');
     }
   }
 
-  // la méthode delete()
-  async hardDelete(id: string) {
-    return this.prisma.$transaction(async (tx) => {
-      // On récupère le owner_id avant de supprimer le resto
-      const resto = await tx.restaurant.findUnique({ where: { id } });
-      if (!resto) throw new NotFoundException('Restaurant non trouvé');
-
-      await tx.restaurant.delete({ where: { id } });
-
-      await tx.user.delete({ where: { id: resto.owner_id } });
-
-      return { message: 'Restaurant et données associées supprimés' };
-    });
-  }
-
-  // 3. Reset Password (via AuthService)
+  // ────────────────────────────────────────────────
+  // Super Admin - Reset Password
+  // ────────────────────────────────────────────────
   async triggerAdminResetPassword(id: string): Promise<string> {
     const resto = await this.prisma.restaurant.findUnique({
       where: { id },
       select: { owner_id: true },
     });
-
     if (!resto) throw new NotFoundException('Restaurant non trouvé');
 
     const user = await this.prisma.user.findUnique({
       where: { id: resto.owner_id },
     });
-
-    if (!user) {
+    if (!user)
       throw new NotFoundException(
         "L'administrateur de ce restaurant n'existe pas.",
       );
-    }
 
-    return user.email; // On retourne l'email pour que le controller puisse appeler AuthService
+    return user.email;
+  }
+
+  // ────────────────────────────────────────────────
+  // Utilitaires privés
+  // ────────────────────────────────────────────────
+  private generateRandomPassword(length: number): string {
+    const chars =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
+    return Array.from({ length }, () =>
+      chars.charAt(Math.floor(Math.random() * chars.length)),
+    ).join('');
   }
 
   private async generateUniqueSlug(name: string): Promise<string> {
-    // 1. Nettoyage de base (minuscules, accents, caractères spéciaux)
     let slug = name
       .toLowerCase()
-      .normalize('NFD') // Sépare les accents des lettres
-      .replace(/[\u0300-\u036f]/g, '') // Supprime les accents
-      .replace(/[^a-z0-9]+/g, '-') // Remplace tout ce qui n'est pas alphanumérique par des tirets
-      .replace(/(^-|-$)+/g, ''); // Supprime les tirets au début et à la fin
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
 
     let uniqueSlug = slug;
     let counter = 1;
     let exists = true;
 
-    // 2. Boucle de vérification d'unicité
     while (exists) {
       const restaurant = await this.prisma.restaurant.findUnique({
         where: { slug: uniqueSlug },
       });
-
       if (!restaurant) {
         exists = false;
       } else {
@@ -547,7 +501,6 @@ export class RestaurantsService {
         counter++;
       }
     }
-
     return uniqueSlug;
-  } // --- UTILITAIRES SLUG ---
+  }
 }

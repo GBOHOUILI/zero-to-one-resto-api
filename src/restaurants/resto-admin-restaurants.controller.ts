@@ -99,9 +99,15 @@ export class RestoAdminRestaurantsController {
   })
   async updateDesign(
     @GetUser('restaurantId') restaurantId: string,
+    @GetUser('role') role: string,
     @Body() dto: UpdateDesignDto,
   ) {
-    return this.restaurantsService.updateDesign(restaurantId, dto);
+    return this.restaurantsService.updateDesign(
+      restaurantId,
+      dto,
+      role,
+      restaurantId,
+    );
   }
 
   @Get('pages/:slug')

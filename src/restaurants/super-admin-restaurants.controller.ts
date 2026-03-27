@@ -110,8 +110,12 @@ export class SuperAdminRestaurantsController {
   @ApiOperation({
     summary: 'Modifier le design d’un restaurant spécifique (Super Admin)',
   })
-  async updateDesign(@Param('id') id: string, @Body() dto: UpdateDesignDto) {
-    return this.restaurantsService.updateDesign(id, dto);
+  async updateDesign(
+    @Param('id') id: string,
+    @GetUser('role') role: string,
+    @Body() dto: UpdateDesignDto,
+  ) {
+    return this.restaurantsService.updateDesign(id, dto, role, id);
   }
 
   @Get(':id/pages/:slug')
