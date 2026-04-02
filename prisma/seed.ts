@@ -5,7 +5,7 @@
  *        (ou via package.json: npm run db:seed)
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -13,7 +13,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Démarrage du seed...\n');
 
-  // 1. Super Admin
+  // ─── 1. Super Admin ───────────────────────────────────────────────────────
   const superAdminEmail = 'admin@zero-to-one.bj';
   const superAdminPassword = await bcrypt.hash('SuperAdmin123!', 12);
 
@@ -23,7 +23,7 @@ async function main() {
     create: {
       email: superAdminEmail,
       password: superAdminPassword,
-      role: 'SUPER_ADMIN',
+      role: Role.SUPER_ADMIN,
     },
   });
   await prisma.profile.upsert({
@@ -33,7 +33,7 @@ async function main() {
   });
   console.log(`✅ Super Admin : ${superAdminEmail}`);
 
-  // 2. Restaurant démo : Chez Maman
+  // ─── 2. Restaurant démo : Chez Maman ─────────────────────────────────────
   const restoAdminEmail = 'chezmaman@demo.bj';
   const restoAdminPassword = await bcrypt.hash('RestoPass123!', 12);
 
@@ -43,7 +43,7 @@ async function main() {
     create: {
       email: restoAdminEmail,
       password: restoAdminPassword,
-      role: 'RESTO_ADMIN',
+      role: Role.RESTO_ADMIN,
     },
   });
 
@@ -78,7 +78,7 @@ async function main() {
     },
   });
 
-  // Contact & WhatsApp
+  // Contact
   await prisma.contact.upsert({
     where: { restaurant_id: restaurant.id },
     update: {},
@@ -92,8 +92,14 @@ async function main() {
     },
   });
 
-  // Horaires d'ouverture
+  // Horaires
   const hours = [
+    {
+      day_of_week: 0,
+      open_time: '10:00',
+      close_time: '20:00',
+      is_closed: false,
+    },
     {
       day_of_week: 1,
       open_time: '08:00',
@@ -130,28 +136,17 @@ async function main() {
       close_time: '23:00',
       is_closed: false,
     },
-    {
-      day_of_week: 0,
-      open_time: '10:00',
-      close_time: '20:00',
-      is_closed: false,
-    },
   ];
   for (const h of hours) {
+    const seedId = `seed-hour-${restaurant.id}-${h.day_of_week}`;
     await prisma.openingHour.upsert({
-      where: {
-        id: `seed-hour-${restaurant.id}-${h.day_of_week}`,
-      },
+      where: { id: seedId },
       update: {},
-      create: {
-        id: `seed-hour-${restaurant.id}-${h.day_of_week}`,
-        restaurant_id: restaurant.id,
-        ...h,
-      },
+      create: { id: seedId, restaurant_id: restaurant.id, ...h },
     });
   }
 
-  // Liens sociaux
+  // Réseaux sociaux
   await prisma.socialLink.upsert({
     where: { restaurant_id: restaurant.id },
     update: {},
@@ -163,10 +158,23 @@ async function main() {
     },
   });
 
+  // Business info
+  await prisma.businessInfo.upsert({
+    where: { restaurant_id: restaurant.id },
+    update: {},
+    create: {
+      restaurant_id: restaurant.id,
+      delivery_fee: 500,
+      services: ['dine-in', 'takeaway', 'delivery'],
+      capacity: 60,
+      payment_methods: ['cash', 'mtn-money', 'moov-money'],
+    },
+  });
+
   console.log(`✅ Restaurant : Chez Maman (${restaurant.slug})`);
 
-  // 3. Catégories de menu
-  const catEntrées = await prisma.menuCategory.upsert({
+  // ─── 3. Catégories ───────────────────────────────────────────────────────
+  const catEntrees = await prisma.menuCategory.upsert({
     where: { id: 'seed-cat-entrees' },
     update: {},
     create: {
@@ -177,7 +185,6 @@ async function main() {
       position: 0,
     },
   });
-
   const catPlats = await prisma.menuCategory.upsert({
     where: { id: 'seed-cat-plats' },
     update: {},
@@ -189,7 +196,6 @@ async function main() {
       position: 1,
     },
   });
-
   const catBoissons = await prisma.menuCategory.upsert({
     where: { id: 'seed-cat-boissons' },
     update: {},
@@ -201,7 +207,6 @@ async function main() {
       position: 2,
     },
   });
-
   const catDesserts = await prisma.menuCategory.upsert({
     where: { id: 'seed-cat-desserts' },
     update: {},
@@ -213,115 +218,124 @@ async function main() {
       position: 3,
     },
   });
+  console.log('✅ Catégories créées');
 
-  console.log('✅ Catégories créées : Entrées, Plats, Boissons, Desserts');
-
-  // 4. Items du menu
+  // ─── 4. Menu items ────────────────────────────────────────────────────────
+  // FIX : "description" → "short_description", ajout "category_type" obligatoire
   const menuItems = [
-    // Entrées
     {
       id: 'seed-item-1',
-      category_id: catEntrées.id,
+      category_id: catEntrees.id,
       name: 'Salade de légumes frais',
-      price: 1500,
-      description:
+      short_description:
         'Salade composée de légumes locaux de saison avec vinaigrette maison',
+      price: 1500,
+      category_type: 'entree',
       position: 0,
     },
     {
       id: 'seed-item-2',
-      category_id: catEntrées.id,
+      category_id: catEntrees.id,
       name: 'Soupe de poisson',
+      short_description: 'Soupe onctueuse au poisson fumé et légumes verts',
       price: 2000,
-      description: 'Soupe onctueuse au poisson fumé et légumes verts',
+      category_type: 'entree',
       position: 1,
     },
-    // Plats
     {
       id: 'seed-item-3',
       category_id: catPlats.id,
       name: 'Poulet braisé (demi)',
-      price: 4500,
-      description:
+      short_description:
         "Poulet mariné aux épices africaines, braisé au feu de bois. Servi avec du riz et de l'attiéké",
+      price: 4500,
+      category_type: 'plat',
       position: 0,
     },
     {
       id: 'seed-item-4',
       category_id: catPlats.id,
       name: 'Riz au gras + poisson',
-      price: 3500,
-      description:
+      short_description:
         'Riz cuit dans un bouillon savoureux, accompagné de poisson frit et de légumes',
+      price: 3500,
+      category_type: 'plat',
       position: 1,
     },
     {
       id: 'seed-item-5',
       category_id: catPlats.id,
       name: 'Sauce gombo + viande',
-      price: 3000,
-      description:
+      short_description:
         "Gombo frais cuisiné à la tomate avec viande de bœuf, servi avec de l'akassa ou du riz",
+      price: 3000,
+      category_type: 'plat',
       position: 2,
     },
     {
       id: 'seed-item-6',
       category_id: catPlats.id,
       name: 'Brochettes de bœuf (6 pièces)',
+      short_description:
+        'Brochettes marinées et grillées, servies avec du pain maison et sauce pimentée',
       price: 2500,
-      description:
-        'Brochettes marinées et grillées, servies avec du pain maison et une sauce pimentée',
+      category_type: 'plat',
       position: 3,
     },
-    // Boissons
     {
       id: 'seed-item-7',
       category_id: catBoissons.id,
       name: 'Bissap (bouteille 50cl)',
+      short_description: "Jus de fleurs d'hibiscus sucré, fraîchement préparé",
       price: 800,
-      description: "Jus de fleurs d'hibiscus sucré, fraîchement préparé",
+      category_type: 'boisson',
       position: 0,
     },
     {
       id: 'seed-item-8',
       category_id: catBoissons.id,
       name: 'Gingembre naturel (50cl)',
-      price: 800,
-      description:
+      short_description:
         'Boisson au gingembre frais, légèrement épicée et rafraîchissante',
+      price: 800,
+      category_type: 'boisson',
       position: 1,
     },
     {
       id: 'seed-item-9',
       category_id: catBoissons.id,
       name: 'Eau minérale (1L)',
+      short_description: 'Eau minérale fraîche',
       price: 500,
-      description: '',
+      category_type: 'boisson',
       position: 2,
     },
     {
       id: 'seed-item-10',
       category_id: catBoissons.id,
       name: 'Jus de fruits (33cl)',
+      short_description: 'Mangue, ananas ou goyave — selon disponibilité',
       price: 700,
-      description: 'Mangue, ananas ou goyave — selon disponibilité',
+      category_type: 'boisson',
       position: 3,
     },
-    // Desserts
     {
       id: 'seed-item-11',
       category_id: catDesserts.id,
       name: 'Crème caramel maison',
+      short_description: 'Flan au caramel préparé chaque matin par notre chef',
       price: 1200,
-      description: 'Flan au caramel préparé chaque matin par notre chef',
+      category_type: 'dessert',
       position: 0,
     },
     {
       id: 'seed-item-12',
       category_id: catDesserts.id,
       name: 'Salade de fruits tropicaux',
+      short_description:
+        'Mangue, papaye, ananas et banane plantain caramélisée',
       price: 1500,
-      description: 'Mangue, papaye, ananas et banane plantain caramélisée',
+      category_type: 'dessert',
       position: 1,
     },
   ];
@@ -334,32 +348,33 @@ async function main() {
         ...item,
         restaurant_id: restaurant.id,
         available: true,
+        ingredients: [],
+        allergens: [],
+        accompaniments: [],
       },
     });
   }
-  console.log(`✅ ${menuItems.length} plats créés dans le menu`);
+  console.log(`✅ ${menuItems.length} plats créés`);
 
-  // 5. Témoignages
+  // ─── 5. Témoignages ───────────────────────────────────────────────────────
+  // FIX : "content" → "text" (nom réel dans le schema)
   const testimonials = [
     {
       id: 'seed-t-1',
       author: 'Fatou K.',
-      content:
-        "Le poulet braisé est incroyable ! L'un des meilleurs de Cotonou. Je commande chaque semaine.",
+      text: "Le poulet braisé est incroyable ! L'un des meilleurs de Cotonou. Je commande chaque semaine.",
       rating: 5,
     },
     {
       id: 'seed-t-2',
       author: 'Jean-Pierre A.',
-      content:
-        'Service rapide et plats généreux. La sauce gombo rappelle vraiment la cuisine de grand-mère.',
+      text: 'Service rapide et plats généreux. La sauce gombo rappelle vraiment la cuisine de grand-mère.',
       rating: 5,
     },
     {
       id: 'seed-t-3',
       author: 'Mariama D.',
-      content:
-        "Le bissap est le meilleur que j'ai goûté en ville. Propre, bon et pas cher !",
+      text: "Le bissap est le meilleur que j'ai goûté en ville. Propre, bon et pas cher !",
       rating: 4,
     },
   ];
@@ -372,15 +387,19 @@ async function main() {
   }
   console.log('✅ Témoignages créés');
 
-  // 6. Plan d'abonnement + Souscription démo
-  const plan = await prisma.plan.upsert({
+  // ─── 6. Plans + Abonnement ────────────────────────────────────────────────
+  // FIX : "billing_cycle" → "billing_period", ajout des champs obligatoires
+  const planStarter = await prisma.plan.upsert({
     where: { id: 'seed-plan-starter' },
     update: {},
     create: {
       id: 'seed-plan-starter',
       name: 'Starter',
       price: 15000,
-      billing_cycle: 'monthly',
+      billing_period: 'monthly', // ✅ nom correct
+      custom_domain: false, // ✅ champ obligatoire
+      max_menu_items: 30, // ✅ champ obligatoire
+      analytics: false, // ✅ champ obligatoire
       features: [
         'Menu digital',
         'QR Code',
@@ -391,14 +410,17 @@ async function main() {
     },
   });
 
-  const planPro = await prisma.plan.upsert({
+  await prisma.plan.upsert({
     where: { id: 'seed-plan-pro' },
     update: {},
     create: {
       id: 'seed-plan-pro',
       name: 'Pro',
       price: 35000,
-      billing_cycle: 'monthly',
+      billing_period: 'monthly', // ✅ nom correct
+      custom_domain: true, // ✅ champ obligatoire
+      max_menu_items: 200, // ✅ champ obligatoire
+      analytics: true, // ✅ champ obligatoire
       features: [
         'Tout Starter',
         'Domaine personnalisé',
@@ -415,7 +437,7 @@ async function main() {
     update: {},
     create: {
       restaurant_id: restaurant.id,
-      plan_id: plan.id,
+      plan_id: planStarter.id,
       status: 'ACTIVE',
       start_date: new Date(),
       end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -423,13 +445,13 @@ async function main() {
   });
   console.log('✅ Plans créés : Starter (15 000 FCFA) + Pro (35 000 FCFA)');
 
-  // 7. FAQ
+  // ─── 7. FAQ ───────────────────────────────────────────────────────────────
   const faqs = [
     {
       id: 'seed-faq-1',
       question: 'Faites-vous la livraison ?',
       answer:
-        'Oui ! Nous livrons dans un rayon de 5km autour de Cadjehoun. Contactez-nous sur WhatsApp pour organiser votre livraison.',
+        'Oui ! Nous livrons dans un rayon de 5km autour de Cadjehoun. Contactez-nous sur WhatsApp.',
       position: 0,
     },
     {
@@ -455,7 +477,22 @@ async function main() {
   }
   console.log('✅ FAQ créée');
 
-  // 8. Commandes démo
+  // ─── 8. Promotions ────────────────────────────────────────────────────────
+  await prisma.promotion.upsert({
+    where: { id: 'seed-promo-1' },
+    update: {},
+    create: {
+      id: 'seed-promo-1',
+      restaurant_id: restaurant.id,
+      title: '-10% sur votre première commande',
+      description:
+        'Utilisez le code BIENVENUE au moment de votre commande WhatsApp.',
+      active: true,
+    },
+  });
+  console.log('✅ Promotion créée');
+
+  // ─── 9. Commande démo ────────────────────────────────────────────────────
   await prisma.order.upsert({
     where: { short_id: 'ZO-DEMO001' },
     update: {},
@@ -508,15 +545,13 @@ async function main() {
       },
     },
   });
-
   console.log('✅ Commande démo créée : #ZO-DEMO001');
 
   console.log('\n🎉 Seed terminé avec succès !');
-  console.log('─────────────────────────────────────────');
-  console.log('🔑 Super Admin   : admin@zero-to-one.bj / SuperAdmin123!');
-  console.log('🍽️  Resto Admin   : chezmaman@demo.bj / RestoPass123!');
-  console.log('🌐 URL démo      : http://chez-maman.zero-to-one.bj');
-  console.log('─────────────────────────────────────────');
+  console.log('─────────────────────────────────────────────────');
+  console.log('🔑 Super Admin  : admin@zero-to-one.bj / SuperAdmin123!');
+  console.log('🍽️  Resto Admin  : chezmaman@demo.bj / RestoPass123!');
+  console.log('─────────────────────────────────────────────────');
 }
 
 main()
