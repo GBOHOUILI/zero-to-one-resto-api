@@ -8,8 +8,18 @@ import {
   Delete,
   Body,
   Param,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
+import { Express } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MenusService } from './menus.service';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
@@ -30,10 +40,7 @@ export class RestoAdminMenusController {
 
   @Get('categories')
   @ApiOperation({ summary: 'Lister mes catégories de menu' })
-  async getCategories(
-    @GetUser('restaurantId') restaurantId: string, // On récupère directement le resto lié au user
-  ) {
-    // Le service n'attend plus que 1 argument : restaurantId
+  async getCategories(@GetUser('restaurantId') restaurantId: string) {
     return this.menusService.getCategories(restaurantId);
   }
 
@@ -43,7 +50,6 @@ export class RestoAdminMenusController {
     @GetUser('restaurantId') restaurantId: string,
     @Body() dto: CreateMenuCategoryDto,
   ) {
-    // Le service attend 2 arguments : restaurantId, dto
     return this.menusService.createCategory(restaurantId, dto);
   }
 
@@ -67,14 +73,33 @@ export class RestoAdminMenusController {
   }
 
   @Post('items')
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Ajouter un plat à une catégorie avec son image Cloudinary',
+  })
+  @ApiBody({
+    description: 'Création d’un plat avec upload d’image optionnel',
+    schema: {
+      type: 'object',
+      properties: {
+        category_id: { type: 'string' },
+        name: { type: 'string' },
+        short_description: { type: 'string' },
+        price: { type: 'number' },
+        category_type: { type: 'string' },
+        available: { type: 'boolean' },
+        position: { type: 'number' },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
   })
   async createItem(
     @GetUser('restaurantId') restaurantId: string,
     @Body() dto: CreateMenuItemDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.menusService.createItem(restaurantId, dto);
+    return this.menusService.createItem(restaurantId, dto, file);
   }
 
   @Patch('categories/:id')
@@ -117,13 +142,30 @@ export class RestoAdminMenusController {
   }
 
   @Patch('items/:id')
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Modifier un plat (nom, prix, image, etc.)' })
+  @ApiBody({
+    description: 'Modification de plat avec image optionnelle',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        price: { type: 'number' },
+        category_type: { type: 'string' },
+        available: { type: 'boolean' },
+        position: { type: 'number' },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   async updateItem(
     @Param('id') id: string,
     @GetUser('restaurantId') restaurantId: string,
     @Body() dto: UpdateMenuItemDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.menusService.updateItem(id, restaurantId, dto);
+    return this.menusService.updateItem(id, restaurantId, dto, file);
   }
 
   @Delete('items/:id')
@@ -144,7 +186,6 @@ export class RestoAdminMenusController {
     @GetUser('restaurantId') restaurantId: string,
     @Body() dto: ToggleAvailabilityDto,
   ) {
-    // ON APPELLE LE SERVICE ICI, ON NE FAIT PAS DE "this.db" ICI
     return this.menusService.toggleItemAvailability(
       id,
       restaurantId,

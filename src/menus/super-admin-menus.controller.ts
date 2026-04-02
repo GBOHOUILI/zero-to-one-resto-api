@@ -8,8 +8,18 @@ import {
   Delete,
   Body,
   Param,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
+import { Express } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MenusService } from './menus.service';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/role.enum';
@@ -64,12 +74,64 @@ export class SuperAdminMenusController {
   }
 
   @Post('items')
-  @ApiOperation({ summary: 'Ajouter un plat au menu d’un restaurant' })
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Ajouter un plat au menu d’un restaurant avec image',
+  })
+  @ApiBody({
+    description: 'Création d’un plat avec upload d’image optionnel',
+    schema: {
+      type: 'object',
+      properties: {
+        category_id: { type: 'string' },
+        name: { type: 'string' },
+        short_description: { type: 'string' },
+        price: { type: 'number' },
+        category_type: { type: 'string' },
+        available: { type: 'boolean' },
+        position: { type: 'number' },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   async createItem(
     @Param('restaurantId') restaurantId: string,
     @Body() dto: CreateMenuItemDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.menusService.createItem(restaurantId, dto);
+    return this.menusService.createItem(restaurantId, dto, file);
+  }
+
+  @Patch('items/:id')
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Modifier un plat d’un restaurant spécifique (avec image optionnelle)',
+  })
+  @ApiBody({
+    description: 'Modification d’un plat avec possibilité de changer l’image',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        short_description: { type: 'string' },
+        price: { type: 'number' },
+        category_type: { type: 'string' },
+        available: { type: 'boolean' },
+        position: { type: 'number' },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  async updateItem(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateMenuItemDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.menusService.updateItem(id, restaurantId, dto, file);
   }
 
   @Patch('categories/:id')
@@ -108,16 +170,6 @@ export class SuperAdminMenusController {
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
     });
-  }
-
-  @Patch('items/:id')
-  @ApiOperation({ summary: 'Modifier un plat d’un restaurant spécifique' })
-  async updateItem(
-    @Param('restaurantId') restaurantId: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateMenuItemDto,
-  ) {
-    return this.menusService.updateItem(id, restaurantId, dto);
   }
 
   @Delete('items/:id')

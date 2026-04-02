@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
   InternalServerErrorException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
@@ -12,12 +13,14 @@ import { Prisma } from '@prisma/client';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
+import { UploadService } from '../common/upload.service';
 
 @Injectable()
 export class MenusService {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
+    private uploadService: UploadService,
   ) {}
 
   // Utilitaire pour obtenir le client injectant le tenantId dans Postgres (RLS)
@@ -158,15 +161,32 @@ export class MenusService {
   /**
    * GESTION DES ITEMS (PLATS)
    */
-  async createItem(restaurantId: string, dto: CreateMenuItemDto) {
+
+  async createItem(
+    restaurantId: string,
+    dto: CreateMenuItemDto,
+    file?: Express.Multer.File,
+  ) {
     const category = await this.db(restaurantId).menuCategory.findUnique({
       where: { id: dto.category_id },
     });
-
     if (!category) throw new NotFoundException('Catégorie introuvable');
 
+    let imageUrl: string | null = null;
+
+    if (file) {
+      try {
+        const result = await this.uploadService.uploadImage(file, restaurantId);
+        imageUrl = result.secure_url;
+      } catch (error) {
+        console.error('Erreur upload Cloudinary:', error);
+        throw new BadRequestException("Échec de l'upload de l'image");
+      }
+    }
+
+    // Position automatique
     let finalPosition = dto.position;
-    if (dto.position === undefined || dto.position === null) {
+    if (finalPosition === undefined || finalPosition === null) {
       const lastItem = await this.db(restaurantId).menuItem.findFirst({
         where: { category_id: dto.category_id },
         orderBy: { position: 'desc' },
@@ -177,6 +197,7 @@ export class MenusService {
     const item = await this.db(restaurantId).menuItem.create({
       data: {
         ...dto,
+        image_url: imageUrl,
         restaurant_id: restaurantId,
         position: finalPosition,
       },
@@ -186,30 +207,83 @@ export class MenusService {
     return item;
   }
 
-  async updateItem(id: string, restaurantId: string, dto: UpdateMenuItemDto) {
-    try {
-      const item = await this.db(restaurantId).menuItem.update({
-        where: { id },
-        data: dto,
-      });
-      await this.invalidateCache(restaurantId);
-      return item;
-    } catch (e) {
-      throw new InternalServerErrorException('Erreur de mise à jour du plat');
+  async updateItem(
+    id: string,
+    restaurantId: string,
+    dto: UpdateMenuItemDto,
+    file?: Express.Multer.File,
+  ) {
+    // Transformation manuelle pour multipart/form-data
+    const updateData: any = { ...dto };
+
+    if (updateData.price !== undefined)
+      updateData.price = Number(updateData.price);
+    if (updateData.position !== undefined)
+      updateData.position = Number(updateData.position);
+    if (updateData.available !== undefined) {
+      updateData.available =
+        updateData.available === 'true' || updateData.available === true;
     }
+
+    const existingItem = await this.db(restaurantId).menuItem.findUnique({
+      where: { id },
+    });
+
+    if (!existingItem) throw new NotFoundException('Plat introuvable');
+
+    let newImageUrl: string | null = null;
+
+    if (file) {
+      try {
+        if (existingItem.image_url) {
+          await this.uploadService.deleteImage(existingItem.image_url);
+        }
+        const result = await this.uploadService.uploadImage(file, restaurantId);
+        newImageUrl = result.secure_url;
+      } catch (error) {
+        throw new BadRequestException("Échec de l'upload de la nouvelle image");
+      }
+    }
+
+    const updatedItem = await this.db(restaurantId).menuItem.update({
+      where: { id },
+      data: {
+        ...updateData,
+        ...(newImageUrl && { image_url: newImageUrl }),
+      },
+    });
+
+    await this.invalidateCache(restaurantId);
+    return updatedItem;
   }
 
   async deleteItem(id: string, restaurantId: string) {
-    const item = await this.db(restaurantId).menuItem.findUnique({
+    const existingItem = await this.db(restaurantId).menuItem.findUnique({
       where: { id },
     });
-    if (!item) throw new NotFoundException('Plat introuvable');
 
-    const deleted = await this.db(restaurantId).menuItem.delete({
+    if (!existingItem) throw new NotFoundException('Plat introuvable');
+
+    // Delete associated image if exists
+    if (existingItem.image_url) {
+      await this.uploadService.deleteImage(existingItem.image_url);
+    }
+
+    const deletedItem = await this.db(restaurantId).menuItem.delete({
       where: { id },
     });
+
     await this.invalidateCache(restaurantId);
-    return deleted;
+    return deletedItem;
+  }
+  private extractPublicId(imageUrl: string): string | null {
+    try {
+      const parts = imageUrl.split('/');
+      const filenameWithExt = parts.pop() || '';
+      return filenameWithExt.split('.')[0];
+    } catch {
+      return null;
+    }
   }
 
   async toggleItemAvailability(
