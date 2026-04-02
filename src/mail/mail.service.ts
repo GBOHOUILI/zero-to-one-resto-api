@@ -372,4 +372,90 @@ export class MailService {
       this.wrap(body, { accentColor: this.colors.danger }),
     );
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 4. NOTIFICATION NOUVELLE COMMANDE (pour le proprio du restaurant)
+  // ─────────────────────────────────────────────────────────────────────────────
+  async sendNewOrderNotification(
+    ownerEmail: string,
+    restaurantName: string,
+    order: {
+      short_id: string;
+      total_amount: number;
+      note?: string | null;
+      customer_phone?: string | null;
+      items: Array<{
+        name: string;
+        quantity: number;
+        unit_price: number;
+        subtotal: number;
+      }>;
+    },
+  ) {
+    const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard/orders`;
+
+    const itemsRows = order.items
+      .map(
+        (item) => `
+          <tr>
+            <td style="padding:10px 16px;font-size:14px;color:${this.colors.dark};border-bottom:1px solid ${this.colors.border};">
+              ${item.name}
+            </td>
+            <td style="padding:10px 16px;font-size:14px;color:${this.colors.muted};text-align:center;border-bottom:1px solid ${this.colors.border};">
+              x${item.quantity}
+            </td>
+            <td style="padding:10px 16px;font-size:14px;color:${this.colors.dark};text-align:right;font-weight:600;border-bottom:1px solid ${this.colors.border};">
+              ${item.subtotal.toLocaleString('fr-FR')} FCFA
+            </td>
+          </tr>`,
+      )
+      .join('');
+
+    const body = `
+        ${this.badge('Nouvelle Commande', this.colors.primary)}
+        <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:${this.colors.dark};">
+          Commande #${order.short_id}
+        </h2>
+        <p style="margin:0 0 24px;font-size:15px;color:${this.colors.muted};line-height:1.6;">
+          <strong>${restaurantName}</strong> vient de recevoir une commande via votre menu digital.
+        </p>
+
+        <!-- Tableau des articles -->
+        <table cellpadding="0" cellspacing="0" style="width:100%;border:1px solid ${this.colors.border};border-radius:8px;overflow:hidden;margin-bottom:24px;">
+          <tr style="background-color:${this.colors.surface};">
+            <th style="padding:10px 16px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${this.colors.muted};text-align:left;">Article</th>
+            <th style="padding:10px 16px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${this.colors.muted};text-align:center;">Qté</th>
+            <th style="padding:10px 16px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${this.colors.muted};text-align:right;">Sous-total</th>
+          </tr>
+          ${itemsRows}
+          <tr style="background-color:${this.colors.primaryLight};">
+            <td colspan="2" style="padding:12px 16px;font-size:15px;font-weight:700;color:${this.colors.primaryDark};">TOTAL</td>
+            <td style="padding:12px 16px;font-size:15px;font-weight:800;color:${this.colors.primaryDark};text-align:right;">
+              ${order.total_amount.toLocaleString('fr-FR')} FCFA
+            </td>
+          </tr>
+        </table>
+
+        <!-- Infos client -->
+        ${this.infoBox([
+          { label: 'Référence', value: `#${order.short_id}` },
+          ...(order.customer_phone
+            ? [{ label: 'Téléphone', value: order.customer_phone }]
+            : []),
+          ...(order.note ? [{ label: 'Note client', value: order.note }] : []),
+        ])}
+
+        ${this.ctaButton('Voir mes commandes', dashboardUrl)}
+
+        <p style="margin:0;font-size:13px;color:${this.colors.muted};line-height:1.6;">
+          Le client a été redirigé vers votre WhatsApp avec le détail de la commande.
+          Confirmez la commande directement sur WhatsApp.
+        </p>`;
+
+    await this.sendHtmlEmail(
+      ownerEmail,
+      `🔔 Nouvelle commande #${order.short_id} — ${restaurantName}`,
+      this.wrap(body),
+    );
+  }
 }

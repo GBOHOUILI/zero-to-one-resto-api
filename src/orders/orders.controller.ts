@@ -1,17 +1,10 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Body,
-  Req,
-  Query,
-  ParseIntPipe,
-  DefaultValuePipe,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { Controller, Post, Body, Req, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Public } from '../auth/public.decorator';
+import { OrdersThrottlerGuard } from '../common/guards/orders-throttler.guard';
 
 @ApiTags('Client - Commandes')
 @Controller('orders')
@@ -24,11 +17,14 @@ export class OrdersController {
    */
   @Post()
   @Public()
+  // Rate limit strict : 5 commandes max par minute par IP
+  @Throttle({ short: { ttl: 60000, limit: 5 } })
+  @UseGuards(OrdersThrottlerGuard)
   @ApiOperation({
     summary: 'Créer une commande et obtenir le lien WhatsApp',
     description:
-      'Enregistre le panier en DB, génère un ID de commande court (#ZO-XXXXX) ' +
-      'et retourne l\'URL WhatsApp pré-remplie avec les détails de la commande.',
+      'Enregistre le panier en DB, génère un ID #ZO-XXXXX ' +
+      "et retourne l'URL WhatsApp pré-remplie. Limité à 5 requêtes/min par IP.",
   })
   createOrder(@Body() dto: CreateOrderDto, @Req() req: any) {
     const ip =
