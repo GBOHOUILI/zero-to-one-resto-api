@@ -74,6 +74,7 @@ model Restaurant {
   testimonials       Testimonial[]
   support_tickets SupportTicket[]
   report Report[]
+  orders Order[]
 }
 
 model Contact {
@@ -333,4 +334,36 @@ model Report {
 
   @@index([status])
   @@index([type])
+}
+
+// ─── Orders (Tunnel WhatsApp)
+model Order {
+  id            String      @id @default(uuid())
+  short_id      String      @unique // ex: ZO-LKHU4K3P
+  restaurant_id String
+  customer_phone String?
+  note          String?     @db.Text
+  total_amount  Float
+  status        String      @default("PENDING") // PENDING | CONFIRMED | CANCELLED
+  ip            String?
+  user_agent    String?
+  created_at    DateTime    @default(now())
+  updated_at    DateTime    @updatedAt
+  restaurant    Restaurant  @relation(fields: [restaurant_id], references: [id], onDelete: Cascade)
+  items         OrderItem[]
+
+  @@index([restaurant_id])
+  @@index([created_at])
+  @@index([short_id])
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  order_id   String
+  item_id    String  // snapshot — pas de FK pour survivre aux suppressions de plats
+  name       String  // snapshot du nom au moment de la commande
+  unit_price Float
+  quantity   Int
+  subtotal   Float
+  order      Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
 }

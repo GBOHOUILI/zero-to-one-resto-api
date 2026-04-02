@@ -40,6 +40,7 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { BusinessInfoModule } from './business-info/business-info.module';
 import { ImagesModule } from './images/images.module';
 import { BackupModule } from './backup/backup.module';
+import { OrdersModule } from './orders/orders.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { BackupModule } from './backup/backup.module';
     BusinessInfoModule,
     ImagesModule,
     BackupModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [
