@@ -502,4 +502,137 @@ describe('MenusService', () => {
       );
     });
   });
+  // ─── PATCH : ajouter ces blocs describe() dans menus.service.spec.ts ────────
+  // Colle ces blocs AVANT la dernière accolade fermante de describe('MenusService', ...)
+
+  // ──────────────────────────────────────────────────
+  // updateItem
+  // ──────────────────────────────────────────────────
+  describe('updateItem()', () => {
+    const dto = { name: 'Poulet grillé', price: 4000 };
+
+    it('should update item without file', async () => {
+      tenantClient.menuItem.findUnique.mockResolvedValue(mockItem);
+      tenantClient.menuItem.update.mockResolvedValue({
+        ...mockItem,
+        name: 'Poulet grillé',
+      });
+      mockRedis.del.mockResolvedValue(undefined);
+
+      const result = await service.updateItem(
+        'item-1',
+        RESTAURANT_ID,
+        dto as any,
+      );
+
+      expect(result.name).toBe('Poulet grillé');
+      expect(mockUploadService.uploadImage).not.toHaveBeenCalled();
+      expect(mockUploadService.deleteImage).not.toHaveBeenCalled();
+    });
+
+    it('should delete old image and upload new one when file is provided', async () => {
+      tenantClient.menuItem.findUnique.mockResolvedValue(mockItem);
+      mockUploadService.deleteImage.mockResolvedValue(undefined);
+      mockUploadService.uploadImage.mockResolvedValue({
+        secure_url: 'https://res.cloudinary.com/demo/new-image.jpg',
+      });
+      tenantClient.menuItem.update.mockResolvedValue({
+        ...mockItem,
+        image_url: 'https://res.cloudinary.com/demo/new-image.jpg',
+      });
+      mockRedis.del.mockResolvedValue(undefined);
+
+      const fakeFile = {
+        buffer: Buffer.from('img'),
+        mimetype: 'image/jpeg',
+      } as any;
+      const result = await service.updateItem(
+        'item-1',
+        RESTAURANT_ID,
+        dto as any,
+        fakeFile,
+      );
+
+      expect(mockUploadService.deleteImage).toHaveBeenCalledWith(
+        mockItem.image_url,
+      );
+      expect(mockUploadService.uploadImage).toHaveBeenCalledWith(
+        fakeFile,
+        RESTAURANT_ID,
+      );
+      expect(result.image_url).toBe(
+        'https://res.cloudinary.com/demo/new-image.jpg',
+      );
+    });
+
+    it('should throw NotFoundException when item does not exist', async () => {
+      tenantClient.menuItem.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateItem('nonexistent', RESTAURANT_ID, dto as any),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should coerce price string to number (multipart form data)', async () => {
+      tenantClient.menuItem.findUnique.mockResolvedValue(mockItem);
+      tenantClient.menuItem.update.mockResolvedValue({
+        ...mockItem,
+        price: 4000,
+      });
+      mockRedis.del.mockResolvedValue(undefined);
+
+      // Simule ce que multipart/form-data envoie : strings
+      const stringDto = { price: '4000', available: 'true' } as any;
+      await service.updateItem('item-1', RESTAURANT_ID, stringDto);
+
+      const updateCall = tenantClient.menuItem.update.mock.calls[0][0];
+      expect(typeof updateCall.data.price).toBe('number');
+      expect(updateCall.data.price).toBe(4000);
+    });
+  });
+
+  // ──────────────────────────────────────────────────
+  // getItems (pagination + filtres)
+  // ──────────────────────────────────────────────────
+  describe('getItems()', () => {
+    it('should return paginated items with total count', async () => {
+      tenantClient.menuItem.findMany.mockResolvedValue([mockItem]);
+      tenantClient.menuItem.count.mockResolvedValue(1);
+
+      const result = await service.getItems(RESTAURANT_ID, {
+        page: 1,
+        limit: 20,
+      });
+
+      expect(result.data).toEqual([mockItem]);
+      expect(result.meta.total).toBe(1);
+      expect(result.meta.lastPage).toBe(1);
+    });
+
+    it('should filter by categoryId when provided', async () => {
+      tenantClient.menuItem.findMany.mockResolvedValue([mockItem]);
+      tenantClient.menuItem.count.mockResolvedValue(1);
+
+      await service.getItems(RESTAURANT_ID, { categoryId: 'cat-1' });
+
+      expect(tenantClient.menuItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ category_id: 'cat-1' }),
+        }),
+      );
+    });
+
+    it('should filter by availability when provided', async () => {
+      tenantClient.menuItem.findMany.mockResolvedValue([]);
+      tenantClient.menuItem.count.mockResolvedValue(0);
+
+      await service.getItems(RESTAURANT_ID, { available: false });
+
+      expect(tenantClient.menuItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ available: false }),
+        }),
+      );
+    });
+  });
 });

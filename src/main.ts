@@ -1,30 +1,66 @@
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import basicAuth = require('express-basic-auth');
-import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import helmet from 'helmet';
+import * as Sentry from '@sentry/node';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
+import { SentryExceptionFilter } from './common/filters/sentry-exception.filter';
+
+const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // 1. Sentry (avant tout le reste)
+  if (process.env.SENTRY_DSN && process.env.NODE_ENV === 'production') {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV,
+      integrations: [nodeProfilingIntegration()],
+      tracesSampleRate: 0.2, // 20% des traces en prod
+      profilesSampleRate: 0.1, // 10% de profiling
+      beforeSend(event) {
+        // Ne jamais envoyer les tokens ou mots de passe dans Sentry
+        if (event.request?.data) {
+          const data = event.request.data as Record<string, any>;
+          ['password', 'token', 'refresh_token', 'reset_token'].forEach((k) => {
+            if (data[k]) data[k] = '[FILTERED]';
+          });
+        }
+        return event;
+      },
+    });
+    logger.log('✅ Sentry initialisé');
+  }
 
-  // ─── Sécurité HTTP Headers (helmet) ──────────────────────────────────────────
-  app.use(helmet());
+  // 2. App NestJS
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
 
-  // ─── CORS ─────────────────────────────────────────────────────────────────────
-  // IMPORTANT : Remplace les origines par tes vrais domaines en production
+  // 3. Sécurité HTTP
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:', 'https://res.cloudinary.com'],
+          scriptSrc: ["'self'"],
+        },
+      },
+      hsts: { maxAge: 31536000, includeSubDomains: true },
+    }),
+  );
+
+  // 4. CORS
   const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3001')
     .split(',')
     .map((o) => o.trim());
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Autoriser les requêtes sans origin (ex: Postman, mobile apps)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+      if (!origin) return callback(null, true); // Postman, mobile
+      if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error(`CORS: Origin ${origin} non autorisée`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -32,59 +68,73 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // ─── Protection du Swagger ────────────────────────────────────────────────────
-  // ✅ Variables d'environnement au lieu de valeurs en dur
+  // 5. Protection Swagger
+  const swaggerUser = process.env.SWAGGER_USER || 'admin';
+  const swaggerPass = process.env.SWAGGER_PASS || 'change-me-in-prod';
+
   app.use(
     ['/api-docs', '/api-docs-json'],
     basicAuth({
       challenge: true,
-      users: {
-        [process.env.SWAGGER_USER || 'admin']:
-          process.env.SWAGGER_PASS || 'change-me',
-      },
+      users: { [swaggerUser]: swaggerPass },
     }),
   );
 
-  // ─── Validation globale ───────────────────────────────────────────────────────
+  // 6. Validation globale
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 
-  // ─── Préfixe global ───────────────────────────────────────────────────────────
+  // 7. Préfixe global
   app.setGlobalPrefix('api');
 
-  // ─── Filtre d'exceptions global ───────────────────────────────────────────────
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // 8. Filtre d'exceptions (Sentry en prod, simple en dev)
+  app.useGlobalFilters(new SentryExceptionFilter());
 
-  // ─── Swagger ──────────────────────────────────────────────────────────────────
-  const config = new DocumentBuilder()
-    .setTitle('Zero-To-One Resto SaaS API')
-    .setDescription(
-      'Documentation privée. Utilisez les identifiants fournis pour tester les endpoints. ' +
-        'Chaque requête doit inclure le header "Host" pour le multi-tenancy.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Entrez votre token JWT ici',
-      },
-      'access-token',
-    )
-    .build();
+  // 9. Swagger
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Zero-To-One Resto SaaS API')
+      .setDescription(
+        'Documentation API multi-tenant. ' +
+          'Header requis pour le multi-tenancy : "X-Tenant-Slug: [slug-restaurant]"',
+      )
+      .setVersion('3.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Token JWT — obtenu via POST /api/auth/login',
+        },
+        'access-token',
+      )
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api-docs', app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
+  }
 
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-  console.log(`🚀 Application running on: http://localhost:${port}/api`);
-  console.log(`📖 Swagger documentation on: http://localhost:${port}/api-docs`);
+  // 10. Graceful shutdown
+  app.enableShutdownHooks();
+
+  // 11. Lancement
+  const port = parseInt(process.env.PORT ?? '3000', 10);
+  await app.listen(port, '0.0.0.0');
+
+  logger.log(`🚀 API running on: http://localhost:${port}/api`);
+  logger.log(`📖 Swagger docs: http://localhost:${port}/api-docs`);
+  logger.log(`🌍 Environment: ${process.env.NODE_ENV ?? 'development'}`);
 }
-bootstrap();
+
+bootstrap().catch((err) => {
+  console.error('❌ Bootstrap failed:', err);
+  process.exit(1);
+});
