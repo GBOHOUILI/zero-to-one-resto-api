@@ -30,7 +30,7 @@ export class RestaurantsService {
     private mailService: MailService,
     private redis: RedisService,
     private domainValidator: DomainValidationService,
-  ) {}
+  ) { }
 
   private db(tenantId: string) {
     return this.prisma.withTenant(tenantId);
@@ -101,6 +101,48 @@ export class RestaurantsService {
     }
   }
 
+  private async sendWelcomeEmailWithRetry(
+    email: string,
+    restaurantName: string,
+    password: string,
+    retries = 3,
+  ) {
+    let attempt = 0;
+
+    while (attempt < retries) {
+      try {
+        await this.mailService.sendWelcomeEmail(
+          email,
+          restaurantName,
+          password,
+        );
+
+        console.log(`✅ Email envoyé à ${email}`);
+        return;
+      } catch (error) {
+        attempt++;
+
+        console.error(
+          `❌ Échec envoi email (tentative ${attempt}) pour ${email}`,
+        );
+
+        // ⏳ Attente exponentielle (1s, 3s, 5s)
+        await new Promise((res) => setTimeout(res, attempt * 2000));
+      }
+    }
+
+    // ❌ Après échec total
+    console.error(`🚨 Impossible d'envoyer l'email à ${email}`);
+
+    // 👉 Option : stocker en DB pour retry manuel
+    await this.prisma.failedEmail.create({
+      data: {
+        to: email,
+        type: 'WELCOME',
+        payload: JSON.stringify({ restaurantName, password }),
+      },
+    });
+  }
   // ────────────────────────────────────────────────
   // Création (Super Admin uniquement)
   // ────────────────────────────────────────────────
@@ -111,6 +153,7 @@ export class RestaurantsService {
     const superAdmin = await this.prisma.user.findUnique({
       where: { id: superAdminId },
     });
+
     if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN') {
       throw new UnauthorizedException(
         'Seul un super admin peut créer un restaurant',
@@ -120,57 +163,64 @@ export class RestaurantsService {
     const existingEmail = await this.prisma.user.findUnique({
       where: { email: dto.adminEmail },
     });
+
     if (existingEmail) {
       throw new BadRequestException('Cet email est déjà utilisé');
     }
 
     const finalSlug = await this.generateUniqueSlug(dto.name);
+
     const password =
       process.env.NODE_ENV === 'test'
         ? 'DefaultPass123'
         : this.generateRandomPassword(12);
+
     const hashed = await bcrypt.hash(password, 12);
 
-    return this.prisma
-      .$transaction(async (tx) => {
-        const restoAdmin = await tx.user.create({
-          data: {
-            email: dto.adminEmail,
-            password: hashed,
-            role: 'RESTO_ADMIN',
-          },
-        });
-        const restaurant = await tx.restaurant.create({
-          data: {
-            name: dto.name,
-            slug: finalSlug,
-            owner_id: restoAdmin.id,
-            status: 'incomplete',
-            type: dto.type || 'default',
-            template: dto.template || 'default',
-            primary_color: dto.primaryColor || '#000000',
-            currency: dto.currency || 'XOF',
-          },
-        });
-        await tx.profile.upsert({
-          where: { user_id: restoAdmin.id },
-          update: { restaurantId: restaurant.id },
-          create: {
-            id: restoAdmin.id,
-            user_id: restoAdmin.id,
-            restaurantId: restaurant.id,
-          },
-        });
-        return restaurant;
-      })
-      .then(async (res) => {
-        await this.mailService.sendWelcomeEmail(
-          dto.adminEmail,
-          res.name,
-          password,
-        );
-        return res;
+    // ✅ 1. Création DB SAFE
+    const result = await this.prisma.$transaction(async (tx) => {
+      const restoAdmin = await tx.user.create({
+        data: {
+          email: dto.adminEmail,
+          password: hashed,
+          role: 'RESTO_ADMIN',
+        },
       });
+
+      const restaurant = await tx.restaurant.create({
+        data: {
+          name: dto.name,
+          slug: finalSlug,
+          owner_id: restoAdmin.id,
+          status: 'incomplete',
+          type: dto.type || 'default',
+          template: dto.template || 'default',
+          primary_color: dto.primaryColor || '#000000',
+          currency: dto.currency || 'XOF',
+        },
+      });
+
+      await tx.profile.upsert({
+        where: { user_id: restoAdmin.id },
+        update: { restaurantId: restaurant.id },
+        create: {
+          id: restoAdmin.id,
+          user_id: restoAdmin.id,
+          restaurantId: restaurant.id,
+        },
+      });
+
+      return { restaurant, email: dto.adminEmail, password };
+    });
+
+    // ✅ 2. Envoi email NON BLOQUANT + retry
+    void this.sendWelcomeEmailWithRetry(
+      result.email,
+      result.restaurant.name,
+      result.password,
+    );
+
+    return result.restaurant;
   }
 
   // ────────────────────────────────────────────────

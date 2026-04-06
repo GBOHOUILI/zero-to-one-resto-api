@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -62,8 +63,10 @@ export class AuthController {
     return this.authService.logout(userId);
   }
 
-  // ✅ Refresh tokens
+  // ✅ REFRESH TOKENS
   @Post('refresh')
+  @UseGuards(AuthGuard('jwt-refresh'))
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rafraîchir les tokens JWT' })
   refreshTokens(

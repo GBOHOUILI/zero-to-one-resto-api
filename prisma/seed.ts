@@ -14,7 +14,7 @@ async function main() {
   console.log('🌱 Démarrage du seed...\n');
 
   // ─── 1. Super Admin ───────────────────────────────────────────────────────
-  const superAdminEmail = 'admin@zero-to-one.bj';
+  const superAdminEmail = 'eldomoreogbohouili@gmail.com';
   const superAdminPassword = await bcrypt.hash('SuperAdmin123!', 12);
 
   const superAdmin = await prisma.user.upsert({
@@ -34,7 +34,7 @@ async function main() {
   console.log(`✅ Super Admin : ${superAdminEmail}`);
 
   // ─── 2. Restaurant démo : Chez Maman ─────────────────────────────────────
-  const restoAdminEmail = 'chezmaman@demo.bj';
+  const restoAdminEmail = 'eldomoreo@gmail.com';
   const restoAdminPassword = await bcrypt.hash('RestoPass123!', 12);
 
   const restoUser = await prisma.user.upsert({

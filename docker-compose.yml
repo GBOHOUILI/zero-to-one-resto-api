@@ -3,21 +3,33 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      network: host
     container_name: zero-to-one-api
     restart: always
     ports:
       - '3000:3000'
+    env_file:
+      - .env 
     environment:
-      DATABASE_URL: postgres://${DB_USERNAME:-postgres}:${DB_PASSWORD:-password}@postgres:5432/${DB_DATABASE:-zero_to_one}?schema=public
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
     depends_on:
-      - postgres
-      - redis
+          postgres:
+            condition: service_healthy
+          redis:
+            condition: service_started
     networks:
       - zero-to-one-network
+
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && node dist/src/main.js"
 
   postgres:
     image: postgres:16-alpine
@@ -33,6 +45,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - zero-to-one-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine

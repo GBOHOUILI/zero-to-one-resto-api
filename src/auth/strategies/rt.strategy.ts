@@ -8,17 +8,19 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      // On ajoute un "fallback" ou un cast pour rassurer TypeScript
-      secretOrKey: process.env.JWT_REFRESH_SECRET || 'fallback-secret-pour-dev',
+      secretOrKey: process.env.JWT_REFRESH_SECRET,
       passReqToCallback: true,
-    });
+      ignoreExpiration: false,
+    } as any);
   }
 
   validate(req: Request, payload: any) {
     const authHeader = req.get('authorization');
-    if (!authHeader) throw new ForbiddenException('Refresh token manquant');
+    if (!authHeader) {
+      throw new ForbiddenException('Refresh token manquant');
+    }
 
-    const refreshToken = authHeader.replace('Bearer', '').trim();
+    const refreshToken = authHeader.replace('Bearer ', '').trim();
 
     return {
       ...payload,
