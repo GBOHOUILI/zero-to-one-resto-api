@@ -2,10 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink } from 'fs/promises';
+import { readFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { v2 as cloudinary } from 'cloudinary';
+import { PrismaService } from '../../prisma/prisma.service';
 
 const execAsync = promisify(exec);
 
@@ -13,7 +14,7 @@ const execAsync = promisify(exec);
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
 
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -21,85 +22,104 @@ export class BackupService {
     });
   }
 
-  // Cron quotidien à 02h00 UTC
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async runDailyBackup() {
     this.logger.log('🗄️  Démarrage backup quotidien...');
     try {
       const result = await this.performBackup();
-      this.logger.log(
-        `✅ Backup terminé : ${result.filename} (${result.size})`,
-      );
+      this.logger.log(`✅ Backup terminé : ${result.filename} (${result.size})`);
     } catch (error) {
       this.logger.error('❌ Backup échoué', error);
     }
   }
 
-  // ─── Backup manuel (déclenché via endpoint super admin) ──────────────────
   async triggerManualBackup() {
     this.logger.log('🗄️  Backup manuel déclenché...');
     return this.performBackup();
   }
 
-  // ─── Logique principale ───────────────────────────────────────────────────
-  private async performBackup(): Promise<{
-    filename: string;
-    url: string;
-    size: string;
-  }> {
+  private async performBackup(): Promise<{ filename: string; url: string; size: string }> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `backup-${timestamp}.sql`;
-    const localPath = join(tmpdir(), filename);
+    const pgDumpAvailable = await this.isPgDumpAvailable();
 
-    // 1. Dump PostgreSQL (Supabase)
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) throw new Error('DATABASE_URL non défini');
+    let fileBuffer: Buffer;
+    let filename: string;
 
-    await execAsync(`pg_dump "${dbUrl}" -F p -f "${localPath}"`, {
-      timeout: 5 * 60 * 1000, // timeout 5 min
-    });
+    if (pgDumpAvailable) {
+      // Prod : pg_dump SQL
+      filename = `backup-${timestamp}.sql`;
+      const localPath = join(tmpdir(), filename);
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) throw new Error('DATABASE_URL non défini');
 
-    // 2. Lire le fichier dump
-    const { readFile } = await import('fs/promises');
-    const fileBuffer = await readFile(localPath);
+      await execAsync(`pg_dump "${dbUrl}" -F p -f "${localPath}"`, {
+        timeout: 5 * 60 * 1000,
+      });
+      fileBuffer = await readFile(localPath);
+      await unlink(localPath).catch(() => {});
+    } else {
+      // Dev fallback : dump JSON via Prisma
+      this.logger.warn('⚠️  pg_dump non disponible — fallback Prisma JSON');
+      filename = `backup-${timestamp}.json`;
+      const data = await this.prismaJsonDump();
+      fileBuffer = Buffer.from(JSON.stringify(data, null, 2), 'utf-8');
+    }
+
     const fileSizeKB = (fileBuffer.length / 1024).toFixed(1);
 
-    // 3. Upload vers Cloudinary (dossier backups, type raw)
-    const uploadResult = await new Promise<{ secure_url: string }>(
-      (resolve, reject) => {
-        cloudinary.uploader
-          .upload_stream(
-            {
-              folder: 'zero-to-one/backups',
-              resource_type: 'raw',
-              public_id: filename,
-              // Expire automatiquement après 30 jours
-              invalidate: true,
-            },
-            (error, result) => {
-              if (error) return reject(error);
-              if (!result) return reject(new Error('Upload backup échoué'));
-              resolve(result);
-            },
-          )
-          .end(fileBuffer);
-      },
-    );
+    const uploadResult = await new Promise<{ secure_url: string }>((resolve, reject) => {
+      cloudinary.uploader
+        .upload_stream(
+          { folder: 'zero-to-one/backups', resource_type: 'raw', public_id: filename, invalidate: true },
+          (error, result) => {
+            if (error) return reject(error);
+            if (!result) return reject(new Error('Upload backup échoué'));
+            resolve(result);
+          },
+        )
+        .end(fileBuffer);
+    });
 
-    // 4. Nettoyage fichier temporaire
-    await unlink(localPath).catch(() => {});
-
-    // 5. Nettoyer les vieux backups (garder 30 derniers)
     await this.pruneOldBackups().catch(() => {});
 
+    return { filename, url: uploadResult.secure_url, size: `${fileSizeKB} KB` };
+  }
+
+  private async isPgDumpAvailable(): Promise<boolean> {
+    try {
+      await execAsync('pg_dump --version', { timeout: 5000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async prismaJsonDump(): Promise<Record<string, any>> {
+    const [restaurants, users, menuCategories, menuItems, subscriptions, payments] =
+      await Promise.all([
+        this.prisma.restaurant.findMany(),
+        this.prisma.user.findMany({ select: { id: true, email: true, role: true, created_at: true } }),
+        this.prisma.menuCategory.findMany(),
+        this.prisma.menuItem.findMany(),
+        this.prisma.subscription.findMany(),
+        this.prisma.payment.findMany(),
+      ]);
+
     return {
-      filename,
-      url: uploadResult.secure_url,
-      size: `${fileSizeKB} KB`,
+      meta: {
+        backup_type: 'prisma_json_fallback',
+        generated_at: new Date().toISOString(),
+        note: 'pg_dump non disponible — export via Prisma ORM',
+      },
+      restaurants,
+      users,
+      menuCategories,
+      menuItems,
+      subscriptions,
+      payments,
     };
   }
 
-  // ─── Garder seulement les 30 derniers backups ─────────────────────────────
   private async pruneOldBackups() {
     const result = await cloudinary.api.resources({
       type: 'upload',
@@ -109,23 +129,18 @@ export class BackupService {
     });
 
     const sorted = (result.resources as any[]).sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
 
-    const toDelete = sorted.slice(30); // Supprimer tout au-delà de 30
+    const toDelete = sorted.slice(30);
     for (const resource of toDelete) {
-      await cloudinary.uploader
-        .destroy(resource.public_id, { resource_type: 'raw' })
-        .catch(() => {});
+      await cloudinary.uploader.destroy(resource.public_id, { resource_type: 'raw' }).catch(() => {});
     }
-
     if (toDelete.length > 0) {
       this.logger.log(`🧹 ${toDelete.length} ancien(s) backup(s) supprimé(s)`);
     }
   }
 
-  // ─── Lister les backups disponibles ──────────────────────────────────────
   async listBackups() {
     const result = await cloudinary.api.resources({
       type: 'upload',
@@ -135,10 +150,7 @@ export class BackupService {
     });
 
     return (result.resources as any[])
-      .sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .map((r) => ({
         filename: r.public_id.split('/').pop(),
         url: r.secure_url,

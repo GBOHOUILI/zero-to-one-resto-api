@@ -24,11 +24,11 @@ export class UpdateDesignDto {
   font_family?: string;
 
   @ApiProperty({
-    example: 'modern',
-    enum: ['classic', 'modern', 'minimalist'],
+    example: 'default',
+    enum: ['default', 'classic', 'modern', 'minimalist', 'template1', 'template2', 'template3', 'template4'],
     description: 'Template de design',
   })
-  @IsIn(['classic', 'modern', 'minimalist'])
+  @IsIn(['default', 'classic', 'modern', 'minimalist', 'template1', 'template2', 'template3', 'template4'])
   @IsOptional()
   template?: string;
 

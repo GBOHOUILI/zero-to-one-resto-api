@@ -93,11 +93,11 @@ export class AppModule {
     // Logging en premier — capture tout avec durée exacte
     consumer
       .apply(LoggingMiddleware)
-      .forRoutes({ path: '*', method: RequestMethod.ALL });
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
 
     // Tenant après
     consumer
       .apply(TenantMiddleware)
-      .forRoutes({ path: '*', method: RequestMethod.ALL });
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
   }
 }
